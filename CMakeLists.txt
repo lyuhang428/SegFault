@@ -38,13 +38,3 @@ PUBLIC
 
 install(TARGETS segfault)
 
-# 通过添加目录可以链接非PATH上的库？
-# add_library(VendorLib INTERFACE) # INTERFACE means no build, 3rd-party library
-# target_include_directories(VendorLib INTERFACE include)
-# target_link_directories(VendorLib INTERFACE lib)
-# target_link_libraries(VendorLib INTERFACE Vendor)
-
-# 上一级CMake
-# target_link_libraries() # link libVendorLib
-# 再上一级
-# add_subdirectory()
