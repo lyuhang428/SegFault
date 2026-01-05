@@ -14,6 +14,15 @@
 6. (optional) intel mkl and intel icpx compiler
 
 ## Installation
+```bash
+source /path/to/intel/oneapi/setvars.sh
+export DATADIR=path/to/data/
+cmake -B build -DCMAKE_CXX_COMPILER=icpx -DCMAKE_INSTALL_PREFIX=./install
+cmake --build build/ -j8
+cd build && make install
+cd ../install/bin/
+./segfault
+```
 
 ## Contributing
 
