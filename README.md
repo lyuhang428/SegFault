@@ -16,8 +16,3 @@
 ## Contributing
 
 该项目欢迎任何形式的贡献，包括但不限于新功能添加，性能优化，bug修复，文档更新等。
-We welcome contributions of all kinds, such as new features,
-improvements, bug fixes, and documentation clarifications. Please read
-our [Contributor Guide](https://iodata.qcdevs.org/contributing.html) and
-[Code of Conduct](https://github.com/theochem/.github/blob/main/CODE_OF_CONDUCT.md)
-for more details.
