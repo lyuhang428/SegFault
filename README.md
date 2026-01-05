@@ -4,7 +4,7 @@
 
 低性能，难使用分子量子化学C++代码，目前处于非常初期阶段，仅支持闭壳层Hartree-Fock和闭壳层LDA DFT计算
 
-### 依赖库
+## Dependencies
 
 1. [Eigen](https://libeigen.gitlab.io/eigen/docs-5.0/) (header only)
 2. [xtensor](https://xtensor.readthedocs.io/en/latest/) (header only)
