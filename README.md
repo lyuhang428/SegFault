@@ -12,6 +12,7 @@
 4. [gsl](https://www.gnu.org/software/gsl/)
 5. (optional) intel mkl and intel icpx compiler
 
+## Installation
 
 ## Contributing
 
