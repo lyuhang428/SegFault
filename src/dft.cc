@@ -49,9 +49,9 @@ void sf::DFT::DFT::init(const int          radial_points,
     this->nbf_pure = mol.nbf_pure;
     this->ne       = mol.ne;
     this->nocc     = mol.nocc;
-    this->lmax     = std::floor(angular_level / 2.); // for spherical expansion truncation, not for integral evaluation!
-    this->nlm      = (this->lmax + 1) * (this->lmax + 1); // l=0 -> 1 ; l=2 -> 9 ; l=14 -> 225 etc.
-    this->lm.reserve(this->nlm); // (l, m) pairs
+    this->lmax     = std::floor(angular_level / 2.);
+    this->nlm      = (this->lmax + 1) * (this->lmax + 1);
+    this->lm.reserve(this->nlm);
     for (auto l=0; l <= this->lmax; ++l) {
         for (auto m=-l; m <= l; ++m) {
             this->lm.emplace_back(l, m);
@@ -62,17 +62,11 @@ void sf::DFT::DFT::init(const int          radial_points,
     assert(it != std::end(LEBEDEV_ORDER));
     int index = it - std::begin(LEBEDEV_ORDER);
 
-    this->nang    = LEBEDEV_LEVEL[index];                  // 角度网格数
-    this->nrad    = static_cast<int>(becke.ncheb);         // 径向网格数
-    this->natgrid = this->nrad * this->nang;               // 原子网格数
-    this->ngrid   = this->natom * this->nrad * this->nang; // 总网格数
-
+    this->nang    = LEBEDEV_LEVEL[index];
+    this->nrad    = static_cast<int>(becke.ncheb);
+    this->natgrid = this->nrad * this->nang;
+    this->ngrid   = this->natom * this->nrad * this->nang;
     
-    // grid (natom, nrad, nang, 3+natom) 坐标+权重
-    // grid_global (natom, natgrid, 3) 仅坐标
-    // grid_total (ngrid, 3) 全部的坐标
-    // `BeckeFuzzyCell::build_grid` 未调用的话后续的初始化无法进行
-    // 构建 this->aos_vals_cart {nbf_cart, natom, natgrid}
     const auto [grid, grid_global] = becke.build_grid();
     const auto grid_total = xt::reshape_view(grid_global, {ngrid, 3});
     const auto& grid_global_ref = grid_global;
@@ -90,14 +84,10 @@ void sf::DFT::DFT::init(const int          radial_points,
         auto view_cart = xt::view(this->aos_vals_cart, xt::all(), iatom, xt::all());
         view_cart = bfs.ao_val(x_view, y_view, z_view); // {nbf_cart, natgrid}
         
-        // 构建球谐形式的基函数在网格上的值矩阵
-        // aos_vals_cart {nbf_cart, natom, natgrid} -> aos_vals_pure {nbf_pure, natom, natgrid}
         xt::view(this->aos_vals_pure, xt::all(), iatom, xt::all()) = xt::linalg::dot(TF, xt::xtensor<double, 2>{view_cart});
     }
     
     
-    // 构建全局距离和固体角
-    // dist, theta, phi (natom, ngrid)
     this->dist.resize({static_cast<size_t>(this->natom),  static_cast<size_t>(this->ngrid)}); // (natom. ngrid)
     this->theta.resize({static_cast<size_t>(this->natom), static_cast<size_t>(this->ngrid)}); // (natom. ngrid)
     this->phi.resize({static_cast<size_t>(this->natom),   static_cast<size_t>(this->ngrid)}); // (natom. ngrid)
@@ -109,7 +99,6 @@ void sf::DFT::DFT::init(const int          radial_points,
         xt::row(this->phi,   iatom) = xt::atan2(xt::col(_disp, 1), xt::col(_disp, 0));
     }
 
-    // 构建实球谐函数 ylm (natom, nlm, ngrid)
     this->ylm.resize({static_cast<size_t>(this->natom), static_cast<size_t>(this->nlm), static_cast<size_t>(this->ngrid)});
 #pragma omp parallel for schedule(dynamic) collapse(2)
     for (auto iatom=0; iatom < this->natom; ++iatom) {
@@ -120,8 +109,6 @@ void sf::DFT::DFT::init(const int          radial_points,
         }
     }
 
-    // 构建单位球面上的球谐基，所有原子共用一套
-    // y_jk (nang, nlm)
     xt::xtensor<double, 1> _theta = xt::acos(xt::row(this->becke.xwleb, 2));
     xt::xtensor<double, 1> _phi   = xt::atan2(xt::row(this->becke.xwleb, 1), xt::row(this->becke.xwleb, 0));
     this->y_jk.resize({static_cast<size_t>(this->nang), static_cast<size_t>(this->nlm)});
@@ -134,18 +121,12 @@ void sf::DFT::DFT::init(const int          radial_points,
 
 xt::xtensor<double, 1> sf::DFT::DFT::build_hartree_potential(const xt::xtensor<double, 2>& rho, const xt::xtensor<double, 2>& mweights, const xt::xtensor<double, 2>& zz)
 {
-    // rho -> rho_ik (natom, nrad, nlm)
     xt::xtensor<double, 3> rho_ik      = xt::zeros<double>({this->natom, this->nrad, this->nlm});
-    // rho_ik -> u_ik (natom, nrad, nlm)
     xt::xtensor<double, 3> u_ik        = xt::zeros<double>({this->natom, this->nrad, this->nlm});
-    // u_ik -> u_ik_interp (natom, nlm, ngrid)
     xt::xtensor<double, 3> u_ik_interp = xt::zeros<double>({this->natom, this->nlm, this->ngrid});
-    // u_ik_interp -> u_ij (ngrid, ) ; TO BE RETURNED
     xt::xtensor<double, 1> u_ij        = xt::zeros<double>({this->ngrid});
 
     for (auto iatom=0; iatom < this->natom; ++iatom) {
-        // 构建电子密度球谐展开系数 rho -> rho_ik
-        // lhs (nrad, nang) ; rhs (nang, nlm) -> (nrad, nlm)
         xt::xtensor<double, 2> _lhs = xt::reshape_view(xt::row(this->becke.weights, iatom) * xt::row(rho, iatom), {this->nrad, this->nang});
         xt::xtensor<double, 2> _rhs = this->y_jk * xt::view(this->becke.xwleb, 3, xt::all(), xt::newaxis());
         Eigen::Map<xxd> _lhs_map{_lhs.data(), this->nrad, this->nang};
@@ -153,31 +134,26 @@ xt::xtensor<double, 1> sf::DFT::DFT::build_hartree_potential(const xt::xtensor<d
         xxd            _rho_ik = _lhs_map * _rhs_map; // (nrad, nlm)
         xt::view(rho_ik, iatom, xt::all(), xt::all()) = xt::adapt(_rho_ik.data(), _rho_ik.size(), xt::no_ownership(), xt::xtensor<double, 2>::shape_type{static_cast<size_t>(this->nrad), static_cast<size_t>(this->nlm)});
 
-        // 求解泊松方程 rho_ik -> u_ik
-        double qn = xt::sum(xt::row(mweights, iatom) * xt::row(rho, iatom))(); // partial charge
+        double qn = xt::sum(xt::row(mweights, iatom) * xt::row(rho, iatom))();
 #pragma omp parallel for schedule(dynamic)
         for (auto ilm=0; ilm < this->nlm; ++ilm) {
-            auto _rho_ik_view           = xt::view(rho_ik, iatom, xt::all(), ilm); // (nrad, )
-            auto _u_ik_view             = xt::view(u_ik,   iatom, xt::all(), ilm); // (nrad, )
+            auto _rho_ik_view           = xt::view(rho_ik, iatom, xt::all(), ilm);
+            auto _u_ik_view             = xt::view(u_ik,   iatom, xt::all(), ilm);
             xt::xtensor<double, 1> _poisson = beckegrid::poisson_solver(_rho_ik_view, this->lm[ilm].first, xt::row(this->becke.rcheb, iatom), this->mol.rms[iatom], qn);
-            _u_ik_view = xt::view(_poisson, xt::range(1, this->nrad+1)); // [1:-1] (nrad, )
+            _u_ik_view = xt::view(_poisson, xt::range(1, this->nrad+1));
 
-            // 给定一个 lm, 插值计算所有网格处的库伦势球谐展开系数 u_ik_interp
-            // cspline::CubicSpline cs(this->becke.zcheb, _u_ik_view);
-            // cs.generate_spline();
             gsl_interp_accel*     acc = gsl_interp_accel_alloc();
             gsl_spline*        spline = gsl_spline_alloc(gsl_interp_cspline, this->nrad); // bc = 'natural'
             xt::xtensor<double, 1> _y = xt::view(_poisson, xt::range(1, this->nrad+1));
             gsl_spline_init(spline, this->becke.zcheb.data(), _y.data(), this->nrad);
-                for (auto igrid=0; igrid < this->ngrid; ++igrid) { // 不要对这层循环使用 omp
+                for (auto igrid=0; igrid < this->ngrid; ++igrid) {
                     if (zz(iatom, igrid) > this->becke.zcheb.back()) {
-                        u_ik_interp(iatom, ilm, igrid) = 0.;   // z = nrad <=> r=0
+                        u_ik_interp(iatom, ilm, igrid) = 0.;
                     }
-                    else if (zz(iatom, igrid) < this->becke.zcheb.front()) { // z = 1 <=> r->inf
+                    else if (zz(iatom, igrid) < this->becke.zcheb.front()) {
                         if (ilm == 0) u_ik_interp(iatom, ilm, igrid) = std::sqrt(4. * PI) * qn;
                         else          u_ik_interp(iatom, ilm, igrid) = 0.;
                     }
-                    // else              u_ik_interp(iatom, ilm, igrid) = cs.eval(zz(iatom, igrid));
                     else              u_ik_interp(iatom, ilm, igrid) = gsl_spline_eval(spline, zz(iatom, igrid), acc);
                 } // loop ngrid
             gsl_spline_free(spline);
@@ -193,9 +169,9 @@ void sf::DFT::DFT::diis(xxd& fock, const std::vector<xxd>& focks, const std::vec
 {
     std::cout << "DIIS enabled\n";
     xxd B = xxd::Zero(focks.size()+1, focks.size()+1);
-    B.bottomRows(1)         = -Eigen::RowVectorXd::Ones(focks.size()+1); // B[-1, :] = -1
-    B.rightCols(1)          = -xd::Ones(focks.size()+1); // B[:, -1] = -1
-    B(B.rows()-1, B.cols()-1) = 0.; // B[-1, -1] = 0.
+    B.bottomRows(1)         = -Eigen::RowVectorXd::Ones(focks.size()+1);
+    B.rightCols(1)          = -xd::Ones(focks.size()+1);
+    B(B.rows()-1, B.cols()-1) = 0.;
 
     for (auto ii=0; ii < focks.size(); ++ii) {
         for (auto jj=0; jj < focks.size(); ++jj) {
@@ -204,7 +180,7 @@ void sf::DFT::DFT::diis(xxd& fock, const std::vector<xxd>& focks, const std::vec
     }
 
     xd diis_rhs = xd::Zero(B.rows());
-    diis_rhs[diis_rhs.size()-1] = -1.; // diis_res[-1] = -1.
+    diis_rhs[diis_rhs.size()-1] = -1.;
     xd diis_coef = B.lu().solve(diis_rhs);
     fock *= 0.;
     for (auto iii=0; iii < diis_coef.size()-1; ++iii) {
@@ -222,9 +198,8 @@ void sf::DFT::DFT::scf(const int maxiter,
                        const int C_id, 
                        const bool pure)
 {
-    // 单电子算符 (nao, nao)
     const std::vector<libint2::Atom>& atoms = this->mol.atoms;
-    const xt::xtensor<double, 3>& aos_vals = pure ? this->aos_vals_pure : this->aos_vals_cart; // (nbf, natom, natgrid)
+    const xt::xtensor<double, 3>& aos_vals = pure ? this->aos_vals_pure : this->aos_vals_cart;
     int nbf = pure ? this->nbf_pure : this->nbf_cart;
 
     const xt::xtensor<double, 2> sij = pure ? sf::get_olp(this->mol.shells_pure)        : sf::get_olp(this->mol.shells_cart);
@@ -236,9 +211,6 @@ void sf::DFT::DFT::scf(const int maxiter,
     const Eigen::Map<const xxd> vij_map{vij.data(), nbf, nbf};
     const xxd hij = tij_map + vij_map;
 
-   
-    // mweights (natom, natgrid)
-    // 径向权重（r^2 wrad），角度权重（wleb），网格权重（becke.weights (natom, natgrid)）
     xt::xtensor<double, 2> mweights = xt::zeros<double>({this->natom, this->natgrid});
     for (auto iatom=0; iatom < this->natom; ++iatom) {
         xt::xtensor<double, 1> _wrad = xt::row(this->becke.rcheb, iatom) * xt::row(this->becke.rcheb, iatom) * xt::row(this->becke.wcheb, iatom); // (nrad, ) 径向权重
@@ -250,8 +222,6 @@ void sf::DFT::DFT::scf(const int maxiter,
         xt::row(mweights, iatom) = xt::ravel(_outer_adaptor) * xt::row(this->becke.weights, iatom);
     }
 
-    // zz (natom, ngrid)
-    // z -> x -> r, u_ik = u_ik(r[x[z]]) 通过内插 z 计算全局 u_ik，进而构建全局库伦势 u_ij
     xt::xtensor<double, 2> zz = xt::zeros<double>({this->natom, this->ngrid});
     const double _prefactor = (this->nrad + 1) / PI;
     for (auto iatom=0; iatom < this->natom; ++iatom) {
@@ -284,17 +254,15 @@ void sf::DFT::DFT::scf(const int maxiter,
     xd  e      =  xd::Zero(nbf);
     xxd vecs   = xxd::Zero(nbf, nbf);
     if (initial_guess == "core") {
-        fprime = sij_inv_half * hij * sij_inv_half; // hij == fock
+        fprime = sij_inv_half * hij * sij_inv_half;
         eigsolver.compute(fprime);
         assert(eigsolver.info() == Eigen::Success);
-        cprime = eigsolver.eigenvectors(); // C'
-        e      = eigsolver.eigenvalues();  // 升序排列？
-        vecs   = sij_inv_half * cprime;    // C
+        cprime = eigsolver.eigenvectors();
+        e      = eigsolver.eigenvalues();
+        vecs   = sij_inv_half * cprime;
     }
     else {std::cerr << "not implemented yet\n"; exit(-1);}
 
-    // 构建初始密度矩阵
-    // Puv = C[:, :nocc] @ C[:, :nocc].T
     auto block = vecs.block(0, 0, nbf, this->nocc);
     xxd Puv = 2. * block * block.transpose();
 
@@ -329,8 +297,6 @@ void sf::DFT::DFT::scf(const int maxiter,
 #endif
 
     std::cout << "!>STEP " << counter+1 << std::endl;
-    // 更新电子密度 rho (natom, natgrid)
-    // 构建电子密度 Puv -> rho use aos_vals_pure if PURE
     xt::xtensor<double, 2> rho = xt::zeros<double>({this->natom, this->natgrid});
 #pragma omp parallel for
     for (auto iatom=0; iatom < this->natom; ++iatom) {
@@ -347,20 +313,18 @@ void sf::DFT::DFT::scf(const int maxiter,
     // 检查通过求积得到的电子数是否复现真值
     double ne_quad = xt::sum(rho * mweights)();
     std::cout << "Number of electron via quadrature " << std::setprecision(15) << std::fixed << ne_quad << std::endl;
-    // assert(std::abs(ne_quad - this->ne) < 1e-3);
+    assert(std::abs(ne_quad - this->ne) < 1e-3);
     rho *= this->ne / ne_quad;
 
-    // 构建全局库伦势
     auto u_ij= build_hartree_potential(rho, mweights, zz);
 
-    // 构建 Juv, Kuv, Cuv, Exuv, Ecuv ; 调用 libxc
     xxd Juv  = xxd::Zero(nbf, nbf);
     xxd Kuv  = xxd::Zero(nbf, nbf);
     xxd Cuv  = xxd::Zero(nbf, nbf);
     xxd Exuv = xxd::Zero(nbf, nbf);
     xxd Ecuv = xxd::Zero(nbf, nbf);
 
-    auto rho_flattened        = xt::ravel(rho); // (natom, natgrid) -> (ngrid, )
+    auto rho_flattened        = xt::ravel(rho);
     xt::xtensor<double, 1> vx = xt::zeros<double>({this->ngrid});
     xt::xtensor<double, 1> ex = xt::zeros<double>({this->ngrid});
     xt::xtensor<double, 1> vc = xt::zeros<double>({this->ngrid});
@@ -374,9 +338,9 @@ void sf::DFT::DFT::scf(const int maxiter,
 #pragma omp parallel for
     for (auto ibf=0; ibf < nbf; ++ibf) {
         for (auto jbf=ibf; jbf < nbf; ++jbf) {
-            auto phi_mu_flattened = xt::ravel(xt::view(aos_vals, ibf, xt::all(), xt::all())); // (ngrid, )
-            auto phi_nu_flattened = xt::ravel(xt::view(aos_vals, jbf, xt::all(), xt::all())); // (ngrid, )
-            auto mweights_flattened = xt::ravel(mweights); // (ngrid, )
+            auto phi_mu_flattened = xt::ravel(xt::view(aos_vals, ibf, xt::all(), xt::all()));
+            auto phi_nu_flattened = xt::ravel(xt::view(aos_vals, jbf, xt::all(), xt::all()));
+            auto mweights_flattened = xt::ravel(mweights);
             Juv(ibf,  jbf) = xt::sum(phi_mu_flattened * u_ij * phi_nu_flattened * mweights_flattened)();
             Kuv(ibf,  jbf) = xt::sum(phi_mu_flattened * vx   * phi_nu_flattened * mweights_flattened)();
             Cuv(ibf,  jbf) = xt::sum(phi_mu_flattened * vc   * phi_nu_flattened * mweights_flattened)();
@@ -424,7 +388,6 @@ void sf::DFT::DFT::scf(const int maxiter,
     cprime = eigsolver.eigenvectors();
     e      = eigsolver.eigenvalues();
     vecs   = sij_inv_half * cprime;
-    // block  = vecs.block(0, 0, this->mol.nao, nocc);
     block  = vecs.block(0, 0, nbf, nocc);
     Puv    = 2. * block * block.transpose();
 
