@@ -13,8 +13,8 @@ void test_hf()
     
     std::cout << LDATADIR << std::endl;
 
-    libint2::Shell::do_enforce_unit_normalization(false); // this setup is consistent with MY-bf convention
-    libint2::initialize(); // DON'T FOGET TO INITIALIZE AND FINALIZE LIBINT2 !
+    libint2::Shell::do_enforce_unit_normalization(false);
+    libint2::initialize();
 
     std::string xyzfile = std::string{LDATADIR} + "/xyz/co2.xyz";
     std::string name    = std::string{LDATADIR} + "/gbs/cc-pvdz.g94";
@@ -36,7 +36,7 @@ void test_dft()
     std::cout << LDATADIR << std::endl;
 
     libint2::Shell::do_enforce_unit_normalization(false);
-    libint2::initialize(); // DON'T FOGET TO INITIALIZE AND FINALIZE LIBINT2 !
+    libint2::initialize();
 
     std::string xyzfile = std::string{LDATADIR} + "/xyz/ch3oh.xyz";
     std::string name    = std::string{LDATADIR} + "/gbs/cc-pvdz.g94";
