@@ -1,0 +1,250 @@
+#include "../include/beckegrid.hpp"
+// #include "lebedev.hpp"
+
+
+xt::xtensor<double, 2> beckegrid::gaussCheby2(const size_t norder, const double rm)
+{
+    xt::xtensor<double, 2> zxrw{{4, norder}, 0.}; // to be returned
+    xt::row(zxrw, 0) = xt::arange(1., static_cast<double>(norder+1)); // z = 1,2,3,...,norder
+    xt::row(zxrw, 1) = xt::cos(xt::row(zxrw, 0) / (norder + 1) * PI);      // x
+    xt::row(zxrw, 2) = rm * (1. + xt::row(zxrw, 1)) / (1. - xt::row(zxrw, 1));  // r
+    xt::row(zxrw, 3) = PI / (norder + 1) * xt::square(xt::sin(xt::row(zxrw, 0) / (norder + 1) * PI)) / xt::sqrt(1. - xt::square(xt::row(zxrw, 1))) * 2. * rm / xt::square(1. - xt::row(zxrw, 1)); // w
+
+    return zxrw;
+}
+
+xt::xtensor<double, 1> beckegrid::poisson_solver(const xt::xtensor<double, 1>& rho_lm, const size_t l, const xt::xtensor<double, 1>& rcheb, const double rm, const double qn)
+{
+    assert(rho_lm.size() == rcheb.size());
+    const int ncheb = rho_lm.size();
+
+    xt::xtensor<double, 1>    b = xt::zeros<double>({ncheb+2}); // Ax = b
+    xt::xtensor<double, 2> diag = xt::diag((l * (l + 1) / xt::square(rcheb)));
+
+    xt::xtensor<double, 2>   D1 = xt::zeros<double>({ncheb+2, ncheb+2});
+    xt::xtensor<double, 2>   D2 = xt::zeros<double>({ncheb+2, ncheb+2});
+
+    xt::xtensor_fixed<double, xt::xshape<7>> kernel_7d1 = {-1.,   9., -45.,    0.,  45.,  -9., 1.}; kernel_7d1 /=  60.;
+    xt::xtensor_fixed<double, xt::xshape<7>> kernel_7d2 = { 2., -27., 270., -490., 270., -27., 2.}; kernel_7d2 /= 180.;
+
+    xt::xtensor<double, 1> dzdr2  = std::pow(ncheb + 1, 2) * rm / (PI * PI * rcheb) / xt::square(rm + rcheb);
+    xt::xtensor<double, 1> d2zdr2 = (ncheb + 1) * std::pow(rm, 2) * (3. * rcheb + rm) / (2. * PI) / xt::pow(rcheb * rm, 1.5) / xt::square(rcheb + rm);
+
+    xt::view(D1,       1, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{-3., -10.,  18., -6.,   1.     }; xt::view(D1,       1, xt::range(      0,       5)) /= 12.;
+    xt::view(D1,       2, xt::range(      0,       6)) = xt::xtensor_fixed<double, xt::xshape<6>>{ 3., -30., -20., 60., -15.,  2.}; xt::view(D1,       2, xt::range(      0,       6)) /= 60.;
+    xt::view(D1, ncheb-1, xt::range(ncheb-4, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<6>>{-2.,  15., -60., 20.,  30., -3.}; xt::view(D1, ncheb-1, xt::range(ncheb-4, ncheb+2)) /= 60.;
+    xt::view(D1,   ncheb, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,   6., -18., 10.,   3.     }; xt::view(D1,   ncheb, xt::range(ncheb-3, ncheb+2)) /= 12.;
+
+    for (auto i=3; i < ncheb-1; ++i) xt::view(D1, i, xt::range(i-3, i+4)) = kernel_7d1;
+    xt::view(D1, xt::range(1,ncheb+1), xt::all()) *= xt::view(d2zdr2, xt::all(), xt::newaxis());
+
+    xt::view(D2,       1, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{11., -20.,   6.,  4., -1.}; xt::view(D2,       1, xt::range(      0,       5)) /= 12.;
+    xt::view(D2,       2, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,  16., -30., 16., -1.}; xt::view(D2,       2, xt::range(      0,       5)) /= 12.;
+    xt::view(D2, ncheb-1, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1., 16., -30.,  16., -1.}; xt::view(D2, ncheb-1, xt::range(ncheb-3, ncheb+2)) /= 12.;
+    xt::view(D2,   ncheb, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,  4.,   6., -20., 11.}; xt::view(D2,   ncheb, xt::range(ncheb-3, ncheb+2)) /= 12.;
+
+    for (auto i=3; i < ncheb-1; ++i) xt::view(D2, i, xt::range(i-3, i+4)) = kernel_7d2;
+    xt::view(D2, xt::range(1,ncheb+1), xt::all()) *= xt::view(dzdr2, xt::all(), xt::newaxis());
+
+    xt::xtensor<double, 2> A = D1 + D2;
+    xt::view(A, xt::range(1, ncheb+1), xt::range(1, ncheb+1)) -= diag; // A[1:-1, 1:-1] -= diag
+    A(0, 0) = 1.;
+    A(ncheb+1, ncheb+1) = 1.;
+
+    b[ncheb+1] = 0.;
+    if (l == 0) b[0] = std::sqrt(4. * PI) * qn; else b[0] = 0.; // 边界条件
+    xt::view(b, xt::range(1, ncheb+1)) = -4. * PI * rcheb * rho_lm;
+
+    // Ax = b
+    Eigen::Map<xxd> _A{A.data(), static_cast<int>(A.shape(0)), static_cast<int>(A.shape(1))};
+    Eigen::Map<xd>  _b{b.data(), static_cast<int>(b.size())};
+    // xd _u_lm = _A.colPivHouseholderQr().solve(_b);
+    xd _u_lm = _A.lu().solve(_b);
+
+    xt::xtensor<double, 1> u_lm = xt::adapt(_u_lm.data(), _u_lm.size(), xt::no_ownership(), xt::xtensor<double, 1>::shape_type{static_cast<size_t>(_u_lm.size())});
+
+    return u_lm;
+}
+
+
+beckegrid::BeckeFuzzyCell::BeckeFuzzyCell(const std::vector<std::string>& symbols,
+                                          const std::vector<double>&          rms,
+                                          const std::vector<int>&         numbers,
+                                          const xt::xtensor<double, 2>&       xyz,
+                                          const size_t                      ncheb,
+                                          const size_t                       nleb,
+                                          const size_t                          k,
+                                          const bool                       biased)
+: symbols(symbols),
+          rms(rms),
+  numbers(numbers),
+          xyz(xyz),
+      ncheb(ncheb),
+        nleb(nleb),
+              k(k),
+     biased(biased)
+{
+    assert((symbols.size() == rms.size()) && symbols.size() == numbers.size() && symbols.size() == xyz.shape(0));
+    assert(xyz.shape(1) == 3);
+    assert(k>=1 && k<=6);
+    this->natom = symbols.size();
+    this->zcheb = xt::zeros<double>({this->ncheb}); // 确定维度，未初始化
+    this->xcheb = xt::zeros<double>({this->natom, this->ncheb});
+    this->rcheb = xt::zeros<double>({this->natom, this->ncheb});
+    this->wcheb = xt::zeros<double>({this->natom, this->ncheb});
+}
+
+xt::xtensor<double, 1> beckegrid::BeckeFuzzyCell::get_weight_s(const double x, const double y, const double z)
+{
+    xt::xtensor_fixed<double, xt::xshape<3>> r{x, y, z};
+    xt::xtensor<double, 1> pres = xt::zeros<double>({natom}); // to be returned
+
+    for (auto iatom=0; iatom < this->natom; ++iatom)
+    {
+        double s = 1.;
+        for (auto jatom=0; jatom < this->natom; ++jatom)
+        {
+            if (jatom == iatom) continue;
+            double ri   = xt::norm_l2(r - xt::row(xyz, iatom))();
+            double rj   = xt::norm_l2(r - xt::row(xyz, jatom))();
+            double rij  = xt::norm_l2(xt::row(xyz, iatom) - xt::row(xyz, jatom))();
+            double muij = (ri - rj) / rij;
+            double nuij = muij;
+            double sij  = 0.;
+
+            if (this->biased)
+            {
+                double chi = BraggSlaterRadii.at(this->symbols[iatom]) / BraggSlaterRadii.at(this->symbols[jatom]);
+                double uij = (chi - 1.) / (chi + 1.);
+                double aij = uij / (uij * uij - 1);
+                if (aij > 0.5) aij = 0.5;
+                else if (aij < -0.5) aij = -0.5;
+                nuij = muij + aij * (1. - muij * muij);
+            }
+            // else nuij = muij; // 已用muij初始化nuij
+
+            switch (this->k)
+            {
+            case 1:
+                sij = beckegrid::s1(nuij);
+                break;
+            case 2:
+                sij = beckegrid::s2(nuij);
+                break;
+            case 3:
+                sij = beckegrid::s3(nuij);
+                break;
+            case 4:
+                sij = beckegrid::s4(nuij);
+                break;
+            case 5:
+                sij = beckegrid::s5(nuij);
+                break;
+            case 6:
+                sij = beckegrid::s6(nuij);
+                break;
+            default:
+                exit(-1);
+            }
+            s *= sij;
+        }
+        pres[iatom] = s;
+    }
+    pres /= xt::sum(pres, {0});
+    return pres;
+}
+
+xt::xtensor<double, 2> beckegrid::BeckeFuzzyCell::get_weight_p(const xt::xtensor<double, 2>& grid)
+{
+    assert(grid.shape(1) == 3); // (N, 3)
+    xt::xtensor<double, 2> dist = xt::norm_l2(this->xyz - xt::view(grid, xt::all(), xt::newaxis(), xt::all()), {2}); // (ngrid, natom)
+    xt::xtensor<double, 2> pres = xt::zeros<double>({natom, grid.shape(0)}); // to be returned (natom, ngrid)
+
+    for (auto iatom=0; iatom < this->natom; ++iatom)
+    {
+        xt::xtensor<double, 1> s = xt::ones<double>({grid.shape(0)});
+        for (auto jatom=0; jatom < this-> natom; ++jatom) {
+            if (jatom == iatom) continue;
+            xt::xtensor<double, 1> muij = (xt::col(dist, iatom) - xt::col(dist, jatom)) / xt::norm_l2(xt::row(xyz, iatom) - xt::row(xyz, jatom));
+            xt::xtensor<double, 1> nuij{muij};
+            xt::xtensor<double, 1>  sij{muij};
+
+            if (this->biased)
+            {
+                double chi = BraggSlaterRadii.at(this->symbols[iatom]) / BraggSlaterRadii.at(this->symbols[jatom]);
+                double uij = (chi - 1.) / (chi + 1.);
+                double aij = uij / (uij * uij - 1.);
+                if (aij > 0.5) aij = 0.5;
+                else if (aij < -0.5) aij = -0.5;
+                nuij = muij + aij * (1 - xt::square(muij));
+            }
+            // else nuij = muij; // 已用 muij 初始化 nuij
+
+            assert(this->k >= 1 && this->k <= 6);
+            switch (this->k)
+            {
+                case 1:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s1);
+                    // TODO: std::execution::par ?
+                    break;
+                case 2:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s2);
+                    break;
+                case 3:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s3);
+                    break;
+                case 4:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s4);
+                    break;
+                case 5:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s5);
+                    break;
+                case 6:
+                    std::transform(nuij.begin(), nuij.end(), sij.begin(), beckegrid::s6);
+                    break;
+                default:
+                    break;
+            }
+
+            s *= sij;
+        }
+        xt::row(pres, iatom) = s;
+    }
+
+    pres /= xt::sum(pres, {0});
+    return pres;
+}
+
+std::tuple<xt::xtensor<double, 4>, xt::xtensor<double, 3>> beckegrid::BeckeFuzzyCell::build_grid()
+{
+    this->xwleb = lebedev::lebedev_rule(this->nleb);                     // (4, nang)
+    this->weights.resize({this->natom, (this->ncheb * xwleb.shape(1))}); // (natom, natgrid) 各原子在自身网格上的权重
+    this->zcheb = xt::arange(1., static_cast<double>(this->ncheb)+1.);   // (nrad, )
+    size_t    nang = xwleb.shape(1);
+    size_t natgrid = this->ncheb * nang;
+    xt::xtensor<double, 4>        grid = xt::zeros<double>({this->natom, this->ncheb,  nang, 3+this->natom});            // (natom, nrad, nang, 3+natom) to be returned
+    xt::xtensor<double, 3> grid_global = xt::zeros<double>(xt::xtensor<double, 3>::shape_type{this->natom, natgrid, 3}); // (natom, nradxnang, 3)        to be returned
+
+    for (auto iatom=0; iatom < this->natom; ++iatom)
+    {
+        xt::xtensor<double, 2> zxrw = gaussCheby2(this->ncheb, this->rms[iatom]);
+        xt::row(this->xcheb, iatom) = xt::row(zxrw, 1);
+        xt::row(this->rcheb, iatom) = xt::row(zxrw, 2);
+        xt::row(this->wcheb, iatom) = xt::row(zxrw, 3);
+
+        for (auto j=0; j < this->ncheb; ++j)
+        {
+            auto view1 = xt::view(grid, iatom, j, xt::all(), xt::range(0, 3));             // 坐标
+            auto view2 = xt::view(grid, iatom, j, xt::all(), xt::range(3, 3+this->natom)); // 权重
+            view1 = xt::transpose(xt::view(xwleb, xt::range(0,3), xt::all()) * zxrw(2, j) + xt::view(this->xyz, iatom, xt::all(), xt::newaxis()));
+            view2 = xt::transpose(this->get_weight_p(view1));
+        }
+
+        xt::row(this->weights, iatom) = xt::ravel<xt::layout_type::row_major>(xt::view(grid, iatom, xt::all(), xt::all(), 3+iatom));        // w
+        xt::view(grid_global, iatom, xt::all(), 0) = xt::ravel<xt::layout_type::row_major>(xt::view(grid, iatom, xt::all(), xt::all(), 0)); // x
+        xt::view(grid_global, iatom, xt::all(), 1) = xt::ravel<xt::layout_type::row_major>(xt::view(grid, iatom, xt::all(), xt::all(), 1)); // y
+        xt::view(grid_global, iatom, xt::all(), 2) = xt::ravel<xt::layout_type::row_major>(xt::view(grid, iatom, xt::all(), xt::all(), 2)); // z
+    }
+
+    return {grid, grid_global};
+}
