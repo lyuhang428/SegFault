@@ -27,7 +27,7 @@ cd ../install/bin/
 ```
 
 ## Example
-> see main.cc
+see main.cc
 
 ## Contributing
 
