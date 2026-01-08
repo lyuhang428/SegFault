@@ -26,6 +26,9 @@ cd ../install/bin/
 ./segfault
 ```
 
+## Example
+>>> see main.cc
+
 ## Contributing
 
 该项目欢迎（急需）任何形式的贡献，包括但不限于新功能添加，性能优化，bug修复，文档更新等。
