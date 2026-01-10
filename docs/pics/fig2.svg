@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="131.4919mm"
+   height="68.22879mm"
+   viewBox="0 0 131.4919 68.22879"
+   version="1.1"
+   id="svg5"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs2">
+    <linearGradient
+       id="linearGradient5721">
+      <stop
+         style="stop-color:#ac886c;stop-opacity:1;"
+         offset="0"
+         id="stop5719" />
+    </linearGradient>
+  </defs>
+  <g
+     id="layer1"
+     transform="translate(-38.515595,-25.088706)">
+    <g
+       id="g11099">
+      <path
+         style="opacity:1;fill:none;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.8, 2.8;stroke-dashoffset:0;stroke-opacity:1"
+         d="M 57.670521,66.530403 H 151.20258"
+         id="path236" />
+      <text
+         xml:space="preserve"
+         style="font-size:3.52777px;font-family:arial;-inkscape-font-specification:arial;opacity:1;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         x="51.138123"
+         y="74.460518"
+         id="text10436"><tspan
+           id="tspan10434"
+           style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.7"
+           x="51.138123"
+           y="74.460518">atom i</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:3.52777px;font-family:arial;-inkscape-font-specification:arial;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         x="93.898102"
+         y="45.234203"
+         id="text10436-3"><tspan
+           id="tspan10434-5"
+           style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.7"
+           x="93.898102"
+           y="45.234203">r<tspan
+   style="font-size:65%;baseline-shift:sub"
+   id="tspan11012">i</tspan></tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:3.52777px;font-family:arial;-inkscape-font-specification:arial;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         x="145.32436"
+         y="43.593975"
+         id="text10436-3-6"><tspan
+           id="tspan10434-5-2"
+           style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.7"
+           x="145.32436"
+           y="43.593975">r<tspan
+   style="font-size:65%;baseline-shift:sub"
+   id="tspan11053">j</tspan></tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:3.52777px;font-family:arial;-inkscape-font-specification:arial;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         x="147.65842"
+         y="74.23864"
+         id="text10436-6"><tspan
+           id="tspan10434-7"
+           style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.7"
+           x="147.65842"
+           y="74.23864">atom j</tspan></text>
+      <path
+         style="opacity:1;fill:none;fill-opacity:1;stroke:#cd0000;stroke-width:0.4;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:1.60001, 1.60001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         d="M 58.182118,65.892759 136.97237,26.220307 151.46129,66.29849"
+         id="path10658" />
+      <text
+         xml:space="preserve"
+         style="font-size:3.52777px;font-family:arial;-inkscape-font-specification:arial;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         x="102.41085"
+         y="72.162582"
+         id="text10436-3-1"><tspan
+           id="tspan10434-5-27"
+           style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.7"
+           x="102.41085"
+           y="72.162582">R<tspan
+   style="font-size:65%;baseline-shift:sub"
+   id="tspan11078">ij</tspan></tspan></text>
+      <circle
+         style="opacity:1;fill:#59aeea;fill-opacity:1;stroke:none;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:1"
+         id="path952"
+         cx="56.43248"
+         cy="66.530403"
+         r="4.0038424" />
+      <circle
+         style="fill:#cb72ac;fill-opacity:1;stroke:none;stroke-width:0.258782;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:1.03513, 1.03513;stroke-dashoffset:0;stroke-opacity:1"
+         id="path952-5"
+         cx="136.95839"
+         cy="26.568882"
+         r="1.4801766" />
+      <circle
+         style="fill:#59aeea;fill-opacity:1;stroke:none;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:1"
+         id="path952-3"
+         cx="152.09062"
+         cy="66.530403"
+         r="4.0038424" />
+      <ellipse
+         style="opacity:1;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:bevel;stroke-dasharray:2.80001, 2.80001;stroke-dashoffset:0;stroke-opacity:0.213114"
+         id="path10380"
+         cx="104.25858"
+         cy="66.530457"
+         rx="65.398918"
+         ry="26.437222" />
+    </g>
+  </g>
+</svg>
