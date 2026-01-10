@@ -129,7 +129,7 @@ $
 
 
 
-=== 纯基函数与笛卡尔基函数
+=== 纯基函数与笛卡尔基函数<Cartbf>
 #linebreak()
 
 Primitive function (Cartesian form): $(x-A_x)^(l_x) (y - A_y)^(l_y) (z - A_z)^(l_z) e^(-alpha |bvec(r) - bvec(R)|^2)$
@@ -603,7 +603,7 @@ $
 使用Becke建议的映射函数：$x mapsto r=r(x) = r_m (1+x)/(1-x) in ("Big", 0) $. 其中 $r_m$ 是元素的 Bragg-Slater 半径@becke1988@slaterradii. 一方面使得切比雪夫求积可以应用于半无界区间的积分，另一方面该映射函数在原子核处密集，远离原子核处稀疏，符合电子密度的分布特点.
 
 #figure(
-  image("pics/tf.svg", width: 50%), 
+  image("pics/fig1.svg", width: 50%), 
   caption: "Becke mapping function.", 
   supplement: "Figure"
 )
@@ -783,7 +783,7 @@ Out[]=216Pi/35
 
 
 
-== 泊松方程数值解
+== 泊松方程数值解<POISSON>
 === 泛函一阶导数
 
 类比于函数的导数 $f^prime (x) = (d f(x))/(d\x)$, $d\f = f^prime d\x$. 泛函的一阶导数为：
@@ -883,9 +883,10 @@ $<hartreepotential2>
 
 由此我们得到*库伦势的积分与微分表达式*，二者等价：
 $
-& v_"Ha" (bvec(r)) = int (n(bvec(r)^prime))/(|bvec(r)-bvec(r)^prime|) \d^3 bvec(r)^prime \
-
-& nabla^2 v_"Ha" (bvec(r)) = -4 pi n(bvec(r)) \
+cases(
+v_"Ha" (bvec(r)) = int (n(bvec(r)^prime))/(|bvec(r)-bvec(r)^prime|) \d^3 bvec(r)^prime ,
+nabla^2 v_"Ha" (bvec(r)) = -4 pi n(bvec(r))
+) \ 
 $<poisson>
 
 *其中库伦势的微分形式即为“泊松方程”. 求解泊松方程就是在给定电子密度时计算库伦势. *
@@ -1109,14 +1110,15 @@ $
 #table(
   columns: 2, 
   [`natom`], [number of atoms], 
+  [`nbf`], [number of basis function], 
   [`nlm`], [number of spherical pair], 
   [`nrad`], [number of radial shells/grids], 
   [`nang`], [number of angular grids], 
   [`natgrid`], [number of atomic grids, `natgrid = nrad x nang`], 
   [`ngrid`], [number of total grids, `ngrid = natom x nrad x nang = natom x natgrid`], 
   [`wi, wj`], [weight of radial point/grid i, angular point/grid j], 
-  [`wa`], [Becke weight], 
-  [`i, j, k`], [indices for radial grid, angular grid, spherical pair `((0,0), (1,-1), (1,0), ..., (l,l))`]
+  [`wa`], [Becke weight (atomic weight)], 
+  [`i, j, k/lm`], [indices for radial grid, angular grid, spherical pair `((0,0), (1,-1), (1,0), ..., (l,l))`]
 
 )
 
@@ -1196,7 +1198,7 @@ $
 & O_(mu nu) = diraccc(phi.alt_mu, hat(O), phi.alt_nu) = int underbrace(phi.alt_mu (bvec(r)) O(bvec(r)) phi.alt_nu (bvec(r)), f(bvec(r))) d^3 bvec(r) \ 
 & approx sum_i^"nrad" r_i^2 w_i sum_j^"nang" underbrace(phi.alt^mu_(i j) phi.alt^nu_(i j) O_(i j), A_(i j)) w_j \ 
 & O_(mu nu) arrow.double.l w_i r_i^2 {phi.alt^mu_(i j) phi.alt^nu_(i j) O_(i j)} w_j \ 
-$
+$<atomicoperator>
 
 
 基函数 $phi.alt_mu$ 的中心在原子C, $phi.alt_nu$ 的中心在原子B, 要计算原子A的网格上的矩阵元只需要计算 $phi.alt_mu$, $phi.alt_nu$, $hat(O)$ 在原子A网格上的函数值. 基函数的中心不需要与网格中心一致. 
@@ -1273,25 +1275,472 @@ $
 & P_i (bvec(r)) = product_(j != i) s(mu_(i j))
 $
 
+*Becke网格核心思想：先处理原子网格(带权)，再遍历所有原子. *
 
 
 == 库伦势的构建
 === 通过电子排斥积分解析构建
-=== 通过数值求解泊松方程构建
+
+同波函数方法：
+$
+  J_(mu nu) = sum_(lambda sigma) P_(lambda sigma) (mu nu|lambda sigma) \ 
+$
+
+通过解析计算电子排斥积分 ERI 和密度矩阵的张量乘法得到库伦势. 
+
+=== 通过数值求解泊松方程构建@becke19882
+
+本节结合@POISSON 一同食用效果更佳. 
+
+待求解的问题：
+$
+& U(bvec(r)) = sum_(l m) (u_(l m) (r)) / r  Y_(l m) (Omega) \ 
+& rho(bvec(r)) = sum_(l m) rho_(l m) (r) Y_(l m) (Omega) \ 
+& {((\dz)/(\dr))^2 (d^2)/(\dz^2) + (d^2z)/(\dr^2) d/(\dz) - (l(l+1))/r^2} space u_(\lm) = -4pi r rho_(\lm) \ 
+$
+
+上式等价于求解线性方程组: $A arrow(x) = arrow(b)$. 其中二阶微分算符和一阶微分算符都是七对角矩阵，$(l(l+1)) / r^2$ 是对角矩阵，$z$ 对 $r$ 的导数是常数. 
+
+二阶 ODE 需要两个边界条件，共有 `nrad` 径向网格, 所以矩阵 $A$ 的维度为 `(nrad+2, nrad+2)`. $rho_(l m)$ 通过对电子密度球谐展开得到，维度为 `(nrad+2, )`. 首尾两个元素分别是 $r->infinity$ 和 $r->0$ 时的边界条件(Dirichlet boundary condition). 注意 ${r_i}$ 是倒序排列的. 
+
+
+
+- *边界条件*
+
+当 $r->infinity$，无论多么复杂的电荷分布都可以看作是点电荷，所以 $lim_(r->infinity) U(bvec(r)) = U(r) = q/r = sum_(l m) u_(l m)/r Y_(l m)$. 此时电势仅仅是标量 $r$ 的函数，所以求和中只有 $Y_(00)$ 的系数不为零：$q/r = u_00 / r sqrt(1/(4pi)) => u_00 = sqrt(4 pi) q$. 
+
+当 $r->0$, $u_(l m) = 0$
+
+N.B. 这里的 $q$ 是通过电子密度积分后得到 partial charge, not atomic number!
+
+```py
+mweights = np.array([np.outer(rrad[iatom]**2 * wrad[iatom], wleb).ravel() * watom[iatom] for iatom in range(natom)]): # (natom, natgrid)
+    qn = np.sum(rho[iatom] * mweights[iatom]) # partial charge for atom i
+```
+
+
+
+- *球谐基*
+
+定义球谐基 $Y_(l m, j) = Y_(k j)$ `shape (nlm, nang)`. 所有原子共用一套, 角度采样点取列别杰夫求积采样点. 
+
+```py
+def _build_spherical_basis(lm:list[(int,int)], x:np.ndarray, y:np.ndarray, z:np.ndarray) -> np.ndarray:
+    r'''
+    Arguments
+    ---------
+    lm : list[(int,int)]
+        Angular number. [(0,0), (1,-1), (1,0), ..., (lmax,lmax)]
+    x, y, z : np.ndarray:
+        Cartesian coordinates of lebedev sampling points on unit sphere
+
+    Return
+    ------
+    y_kj : np.ndarray (nlm, nang)
+    '''
+    nlm = len(lm)
+    nang = len(x)
+    y_kj = np.zeros((nlm,nang))
+    for ilm, (l,m) in enumerate(lm):
+        y_kj[ilm] = compute_real_spherical_harmonics(l, m, theta=np.arccos(z), phi=np.arctan2(y,x))
+    return y_kj
+```
+
+
+
+- *电子密度球谐展开*
+
+
+利用球谐函数的正交归一性：
+$
+& rho_(l m) (r) = integral.double_Omega Y_(l m) (Omega) rho(bvec(r)) sin theta d Omega \ 
+& rho_(i k) = sum_j underbrace((rho_(i j) w^a_(i j)), rho^a_(i j)) underbrace((Y_(k j) w_j)^T, "row-wise product") \ 
+$
+
+$rho_(i j)$ 是电子密度在原子A网格上的值(矩阵形式)，乘以原子A在自己网格上的Becke权重 $w^a_(i j)$ 得到 $rho^a_(i j)$. 通过矩阵乘法球谐基得到电子密度球谐展开系数 $rho_(i k)$ `shape (nrad, nlm)`
+
+```py
+rho_ik[iatom] = (watom[iatom] * rho[iatom]).reshape((nrad, nang)) @ (y_kj * wleb).T
+```
+
+
+
+
+
+
+- *原子网格上的库伦势*
+
+得到 $rho^a_(i k)$ 后通过有限差分和求解线性方程组的得到*原子网格上库伦势的球谐展开系数*：$rho^a_(i k) -> u^a_(i k)$. 
+
+此时得到的库伦势是“局域”的. 如@fig6 所示，目标点不在原子a的网格上，但是原子a对该点的库伦势的贡献大于产生该点的原子b. 如果不考虑原子a的贡献，最终该点处的库伦势会被大大低估. 又因为该点不是原子a的网格点，无法通过求解泊松方程得到原子a在该点处的库伦势，需要通过插值计算. 
+
+#figure(
+  image("pics/fig6.svg", width: 50%), 
+  caption: "Numerically build Hartree potential on the grids.", 
+  supplement: "Figure"
+)<fig6>
+
+由于 $u_(l m) (r)$ 是标量 $r$ 的函数，很自然地想到对 $r$ 进行插值. 但是 $r$ 是非均匀网格，$r$ 越大网格间距越大，会导致在大 $r$ 处三次样条插值结果很不准确. 
+
+#figure(
+  image("pics/fig7.svg", width: 50%), 
+  supplement: "Figure", 
+  caption: "Cubic spline interpolation."
+)
+
+- *插值构建整个网格上的库伦势*
+
+如@becke19882 建议的那样，使用均匀网格 ${z}$ 进行插值. 注意到对所有原子 ${z}$ 是一样的（${r}$的缩放因子取决于具体的元素）, 这是使用切比雪夫径向网格的另一个优势. 
+
+
+```py
+for ilm, (l, _) in ennumerate(lm):
+    u_ik[iatom] = poisson_solver(rho_ik[iatom, :, ilm], l, rrad[iatom], qn) # (nrad, nlm)
+    u_ik_splines[iatom].append(CubicSpline(z, u_ik[iatom][:, ilm]))
+```
+
+为每一组 $(l,m)$ 构建插值器后，需要对*所有*网格进行插值，这样构建的就不再是“局域”的库伦势，而是“全局”库伦势. 因此需要计算所有原子到所有网格的距离：
+
+```py
+def _get_distance(grid_global:np.ndarray, xyz:np.ndarray) -> np.ndarray:
+'''
+    Arguments
+    ---------
+    grid_global : np.ndarray (natom,nradxnang,3)
+    xyz : np.ndarray (natom,3)
+
+    Return
+    ------
+    dist : np.ndarray (natom,natomxnradxnang)
+    '''
+    grid_total = np.concatenate(grid_global) # (natomxnradxnang,3)
+    natom = len(xyz)
+    ngrid = len(grid_total)
+    dist  = np.zeros((natom,ngrid))
+    for iatom in range(natom):
+        _disp = grid_total[:,:3] - xyz[iatom]
+        _dist = np.linalg.norm(_disp, axis=1)
+        dist[iatom]  = _dist
+
+    return dist
+
+ zz = [(nrad + 1) / np.pi * np.arccos((dist[iatom] - rms[iatom]) / (dist[iatom] + rms[iatom])) for iatom in range(natom)] # r = r(z) z = z(r) for interpolation
+```
+
+然后通过三次样条插值计算原子i对所有网格点的库伦势贡献：
+```py
+for ilm, (l, _) in enumerate(lm):
+  u_ik[iatom] = poisson_solver(rho_ik[iatom], ...) # (nrad, nlm)
+  u_ik_splines[iatom].append(CubicSpline(z, u_ik[iatom][:,ilm])) # (nlm, )
+  u_ik_interp[iatom][ilm] = u_ik_splines[iatom][ilm](zz[iatom]) # (nlm, ngrid)
+```
+
+再通过反球谐展开重构出原子i产生的全局库伦势：$U^a_"ngrid" = sum_(k) u^"a interp"_(k,"ngrid") \/ "dist"^a dot.c y^a_(k,"ngrid")$. 其中$y^a_(k, "ngrid")$ 需要计算原子i到所有网格点处固体角，然后计算这些固体角在各 $(l,m)$ 处的球谐函数值: 
+```py
+def _get_solid_angle(grid_global:np.ndarray, xyz:np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    '''
+    Arguments
+    ---------
+    grid_global : np.ndarray (natom,nradxnang,3)
+    xyz : np.ndarray (natom,3)
+
+    Return
+    ------
+    theta : np.ndarray (natom,natomxnradxnang)
+    phi : np.ndarray (natom,natomxnradxnang)
+    '''
+    grid_total = np.concatenate(grid_global) # (natomxnradxnang,3)
+    natom = len(xyz)
+    ngrid = len(grid_total)
+    theta = np.zeros((natom,ngrid))
+    phi   = np.zeros((natom,ngrid))
+    for iatom in range(natom):
+        _disp = grid_total[:,:3] - xyz[iatom]
+        _disp_normalized = _disp / _dist[:,None]
+        _theta = np.arccos(_disp_normalized[:,2])
+        _phi = np.arctan2(_disp_normalized[:,1], _disp_normalized[:,0])
+        theta[iatom] = _theta
+        phi[iatom]   = _phi
+
+    return theta, phi
+
+def _get_spherical_vals(lm:list[(int,int)], theta:np.ndarray, phi:np.ndarray) -> np.ndarray:
+    '''
+    Arguments
+    ---------
+    lm : list[(int,int)]
+    theta : np.ndarray (natom, natomxnradxnang)
+    phi : np.ndarray (natom, natomxnradxnang)
+
+    Return
+    ------
+    ylm : np.ndarray (natom, nlm, natomxnradxnang)
+    '''
+    natom, ngrid = theta.shape
+    nlm = len(lm)
+    ylm = np.zeros((natom,nlm,ngrid)) # (natom,natomxnradxnang)
+
+    for iatom in range(natom):
+        for ilm, (l,m) in enumerate(lm):
+            ylm[iatom,ilm] = rsh(l, m, theta=theta[iatom], phi=phi[iatom])
+    
+    return ylm
+```
+
+最终计算：
+```py 
+u_ij = np.zeros((ngrid,))
+
+for iatom in range(natom):
+    for ilm, (l, _) in enumerate(lm):
+        u_ik[iatom] = poisson_solver(rho_ik[iatom], ...) # (nrad, nlm)
+        u_ik_splines[iatom].append(CubicSpline(z, u_ik[iatom][:,ilm])) # (nlm, )
+        u_ik_interp[iatom][ilm] = u_ik_splines[iatom][ilm](dist) # (nlm, ngrid)
+    u_ij += np.sum((u_ik_interp[iatom] / dist[iatom]) * ylm[iatom], axis=0)
+```
+
+插值重构出的库伦势遍历了所有原子，*考虑了所有原子在整个网格上的库伦势的贡献*. 因此这里得到是*全局库伦势*.
+
+`u_ij shape (ngrid = natomxnradxnang, )`. 这样做为了方便后续计算算符矩阵元. 
+
+- *库伦矩阵元*
+
+@atomicoperator 在原子网格上计算矩阵元. 为了方便计算算符在整个分子网格上的矩阵元，将矩阵表示的各种量展平：`u_ij -> shape (natomxnradxnang,)`. 
+
+矩阵元的计算需要计算基函数在网格上的函数值. 先将基函数组织成多维数组: ${phi.alt^mu_(a,i j) | mu=1,2,dots.c,"nbf" | a=1,2,dots.c,"natom"}$. 按照原子拉平，组织成 `(nbf x ngrid)` 维度矩阵：${phi.alt_(mu, "ngrid") | mu=1,2,dots.c,"nbf"}$. 
+
+同时将所有的权重以及径向雅可比行列式组织到一起并拉平：
+```py
+# watom (natom, natgrid)
+mweights = [np.outer(rrad[iatom]**2 * wrad[iatom], wleb).ravel() * watom[iatom] for iatom in range(natom)] # (natom, natgrid)
+mweights = np.flatten(mweights) # (natomxnradxnang, )
+```
+
+这样就可以计算库伦算符矩阵：
+$
+& J_(mu nu) = diraccc(phi.alt_mu, U, phi.alt_nu) \ 
+& cases(phi.alt_mu -> "(ngrid, )" , 
+        phi.alt_nu -> "(ngridm, )",
+        U -> "u_ij (ngrid, )" ) \ 
+
+& diraccc(phi.alt_mu, U, phi.alt_nu) = integral r^2 d\r integral.double phi.alt_mu (bvec(r)) U(bvec(r)) phi.alt_nu (bvec(r)) sin theta d Omega \ 
+& approx sum_a^"natom" w_a sum_i^"nrad" (r^a_i)^2 w^a_i sum_j^"nang" phi.alt_mu (r^a_i, Omega_j) phi.alt_nu (r^a_i, Omega_j) U(r^a_i, Omega_j) w_j \ 
+& = sum_a sum_i sum_j underbrace({w_a w^a_i (r^a_i)^2 w_j}, "mweights") phi.alt^mu_(a,i j) phi.alt^nu_(a, i j) U_(a, i j) \ 
+& = sum_a sum_(i j)^"natgrid" W_(a, "natgrid") phi.alt^mu_(a, "natgrid") phi.alt^nu_(a, "natgrid") U_(a, "natgrid") \ 
+& = sum_(a i j)^"ngrid" W_"ngrid" phi.alt^mu_"ngrid" phi.alt^nu_"ngrid" U_"ngrid" => J_(mu nu) \ 
+$
+
+代码表示：
+```py
+for mu in range(nbf):
+    for nu in range(nbf):
+        Juv[mu,nu]  = np.sum(aos_vals[mu].ravel() * u_ij * aos_vals[nu].ravel() * mweights)
+```
+
+这样，就通过数值方法得到了库伦算符矩阵. 
+
+
+
+
+
 == 交换相关泛函数值求积
+
+交换相关算符矩阵元的计算通常通过数值求积获得，因为交换泛函和相关泛函的表达式与基函数在实空间的解析积分极难计算. 
+
+交换相关泛函是电子密度的泛函，因此首先需要计算电子密度在分子网格上的值: 
+$
+& rho(bold(r)) = sum_i^"nocc" 2 |f_i|^2 \ 
+& = sum_i^"nocc" 2 sum_mu C_(mu i) phi.alt_mu sum_nu C_(nu i) phi.alt_nu \ 
+& = sum_(mu nu) (sum_i^"nocc" 2 C_(mu i) C_(nu i)) phi.alt_mu phi.alt_nu \ 
+& = sum_(mu nu) P_(mu nu) phi.alt_mu phi.alt_nu \ 
+$
+
+矩阵形式: 
+```py
+rho = np.zeros((ngrid,))
+for mu in range(nbf):
+    for nu in range(nbf):
+        rho += 2 * aos_vals[mu] * Puv[mu,nu] * aos_vals[nu]
+```
+
+通过电子密度在整个实空间上的积分可以重构出电子数: $"ne" = int rho(bold(r)) d^3 bold(r) = $ ```py np.sum(rho * mweights)```. 
+
+通过使用相同的手段，就可以得到交换相关泛函势矩阵元和能量密度矩阵元. 给定电子密度后，交换相关势和能量密度直接通过调用 `libxc` 计算：
+```cpp
+#include "xtensor.hpp"
+#include "xc.h"
+// link library `-lxc`
+
+xc_func_type funcx, funcc;
+xc_func_init(&funcx, X_id, XC_UNPOLARIZED); // init exchange
+xc_func_init(&funcc, C_id, XC_UNPOLARIZED); // init correlation
+
+auto rho = compute_rho();
+
+xt::xtensor<double, 1> vx = xt::zeros<double>({ngrid}); // exchange potential
+xt::xtensor<double, 1> ex = xt::zeros<double>({ngrid}); // exchange energy density
+xt::xtensor<double, 1> vc = xt::zeros<double>({ngrid});
+xt::xtensor<double, 1> ec = xt::zeros<double>({ngrid});
+
+xc_lda_vxc(&funcx, ngrid, rho.data(), vx.data());
+xc_lda_exc(&funcx, ngrid, rho.data(), ex.data());
+xc_lda_vxc(&funcc, ngrid, rho.data(), vc.data());
+xc_lda_exc(&funcc, ngrid, rho.data(), ec.data());
+
+for (auto ibf=0; ibf < nbf; ++ibf) {
+    for (auto jbf=0; jbf < nbf; ++jbf) {
+        Kuv(ibf,  jbf) = xt::sum(aos_vals_mu * vx  * aos_vals_nu * mweights)();
+        Cuv(ibf,  jbf) = xt::sum(aos_vals_mu * vc  * aos_vals_nu * mweights)();
+        Exuv(ibf, jbf) = xt::sum(aos_vals_mu * ex  * aos_vals_nu * mweights)();
+        Ecuv(ibf, jbf) = xt::sum(aos_vals_mu * ec  * aos_vals_nu * mweights)();
+        }
+    }
+}
+
+xc_func_end(&funcx); // free exchange
+xc_func_end(&funcc); // free correlation
+```
+
+
+== Fock 矩阵
+
+各种算符矩阵计算完毕后直接将他们加起来就得到 Fock 矩阵：
+$
+  F = underbrace(T + V_"ext", "analytic") + underbrace(U, "analytic\nor\nnumeric") + underbrace(K + C, "numeric")
+$
+
+利用密度矩阵计算各种能量组分的期望值：$dirac(hat(O)) = "Tr"{P O}$. 最终得到能量分解：
+```py
+kin_e         = np.trace(Puv @ tij.T)
+ext_e         = np.trace(Puv @ vij.T)
+hartree_e     = np.trace(Puv @ Juv.T) / 2 # double counting
+exchange_e    = np.trace(Puv @ Exuv.T) # energy density matrix DOES NOT appear in Fock
+correlation_e = np.trace(Puv @ Ecuv.T)
+etot = kin_e + ext_e + hartree_e + exchange_e + correlation_e + nuc_repulsion
+```
+
+
+
 == 笛卡尔基函数矩阵变换到纯基函数
-#set math.equation(numbering: none)
-电子密度在空间任意点处的函数值已知：
+
+笛卡尔基函数的排序通常按照字典顺序，详情见@Cartbf. 而纯基函数的排序通常有两种：
+1. HORTON/ORCA convention. see #link("https://theochem.github.io/horton/2.1.1/tech_ref_gaussian_basis.html?highlight=basis")[this link]
+
+  $m = 0, 1, -1, 2, -2, dots.c, l, -l$. $C$ stands for cos $because m > 0$, $S$ stands for sin $because m < 0$. 
+
+  #table(
+align: left,
+columns: 2, 
+[$l$], [Ordering], 
+[0], [$C_00$], 
+[1], [$C_10 =z, C_11 = x, S_11 = y$], 
+[2], [$C_20, C_21, S_21, C_22, S_22$], 
+[3], [$C_30, C_31, S_31, C_32, S_32, C_33, S_33$], 
+[4], [$C_40, C_41, S_41, C_42, S_42, C_43, S_43, C_44, S_44$], 
+)
+
+
+2. libint/CCA convention
+  $m = -l, -l+1, dots.c, l-1, l$. 
+
+纯基函数通过笛卡尔基函数线性组合得到，具体计算中则是先在笛卡尔基函数下得到结果（积分，函数值等），然后通过转换矩阵乘法得到纯基函数下的结果. 
+
+HORTON 约定下的转换矩阵见 #link("https://github.com/theochem/iodata/blob/main/tools/harmonics.py"). 
+
+例如，笛卡尔基函数(CCA ordering)在分子网格上的函数值组织成矩阵形式：`aos_vals (nbf, ngrid)`. 根据基函数的角动量 $l$ 构建块对角矩阵: 
+
+#figure(
+  image("pics/fig8.svg", width: 50%), 
+  supplement: "Figure", 
+  caption: "Cartesian to pure transformation matrix."
+)
+
+然后与 `aos_vals` 做矩阵乘法即得到纯基函数在网格上的函数值: `spsdf 21 -> 17`. 
+
+至于算符矩阵同理. 注意转换矩阵高度稀疏. 
+
+下面列出 `lmax=3` 的转换矩阵 (HORTON convention)：
 $
-& rho(arrow(r)) equiv rho(x,y,z) \ 
+& C_00 = 1 \
+
+& vec(
+    C_10,  
+    C_11,  
+    S_11) = mat(
+    dot.c , dot.c ,     1 ;
+        1 , dot.c , dot.c ;
+    dot.c ,     1 , dot.c ;
+     ) dot.c 
+vec(
+    x, 
+    y, 
+    z
+) \
+
+& vec(
+    C_20 , 
+    C_21 , 
+    S_21 , 
+    C_22 , 
+    S_22) = mat(
+    - 1/2     , dot.c , dot.c , - 1/2        , dot.c ,     1 ;
+    dot.c     , dot.c , 1     , dot.c        , dot.c , dot.c ;
+    dot.c     , dot.c , dot.c , dot.c        , 1     , dot.c ;
+    sqrt(3)/2 , dot.c , dot.c , - sqrt(3)/2  , dot.c , dot.c ;
+    dot.c     , 1     , dot.c , dot.c        , dot.c , dot.c ;
+) dot.c
+vec(
+    x\x , 
+    x\y , 
+    x\z , 
+    y\y , 
+    y\z , 
+    z\z
+) \
+
+& vec(
+    C_30 , 
+    C_31 , 
+    S_31 , 
+    C_32 , 
+    S_32 , 
+    C_33 , 
+    S_33
+) = mat(
+    dot.c       , dot.c         , - (3 sqrt(5))/10 , dot.c                  , dot.c , dot.c      , dot.c        , - (3 sqrt(5))/10 , dot.c      ,     1 ;
+    - sqrt(6)/4 , dot.c         , dot.c            , - sqrt(30)/20          , dot.c , sqrt(30)/5 , dot.c        , dot.c            , dot.c      , dot.c ;
+    dot.c       , - sqrt(30)/20 , dot.c            , dot.c                  , dot.c , dot.c      , - sqrt(6)/4  , dot.c            , sqrt(30)/5 , dot.c ;
+    dot.c       , dot.c         , sqrt(3)/2        , dot.c                  , dot.c , dot.c      , dot.c        , - sqrt(3)/2      , dot.c      , dot.c ;
+    dot.c       , dot.c         , dot.c            , dot.c                  , 1     , dot.c      , dot.c        , dot.c            , dot.c      , dot.c ;
+    sqrt(10)/4  , dot.c         , dot.c            , - (3 sqrt(2))/4        , dot.c , dot.c      , dot.c        , dot.c            , dot.c      , dot.c ;
+    dot.c       , (3 sqrt(2))/4 , dot.c            , dot.c                  , dot.c , dot.c      , - sqrt(10)/4 , dot.c            , dot.c      , dot.c ;
+) dot.c
+vec(
+    x\x\x , 
+    x\x\y , 
+    x\x\z , 
+    x\y\y , 
+    x\y\z , 
+    x\z\z , 
+    y\y\y , 
+    y\y\z , 
+    y\z\z , 
+    z\z\z
+)
 $
 
-构建以原子为中心的分子网格：`grid[natom,nrad,(nang,3)]`. 或者分子中某一原子的网格:`grid[nrad,nang,3]`. 即径向`nrad`个网格，每一层`nang`网格，每个网格点坐标`(x,y,z)`
 
 
 
-#set math.mat(delim: "[")
-*密度矩阵*
+
+
+
+
+
+
+= *Appendix*
+
+- *密度矩阵*
 
 Fock矩阵的特征向量组成LCAO分子轨道的系数: 
 $
@@ -1316,68 +1765,6 @@ Puv = 2 * C[:,:ne//2] @ C[:,:ne//2].T
 
 
 
-#linebreak()
-*原子网格上电子密度的计算*
-
-网格的维度为 `(natom, nrad, nang, 3+natom)`. 最后一维的前3列是网格点的笛卡尔坐标, 后几列是各原子1,2,3...i,j,...在原子i网格上的权重. 
-
-基函数在网格上的函数值组织成维度为 `(natom, nao, nrad, nang)` 的矩阵形式. 电子密度在网格上组织成维度为 `(natom, nrad, nang)` 的矩阵. 电子密度的计算为: 
-$
-& rho(bold(r)) = sum_i^(N\/2) 2 |psi_i|^2 \ 
-& = sum_i^(N\/2) 2 sum_mu C_(mu,i) phi.alt_mu sum_nu C_(nu,i) phi.alt_nu \ 
-& = sum_(mu,nu) (sum_i^(N\/2) 2 C_(mu,i) C_(nu,i)) phi.alt_mu phi.alt_nu \ 
-& = sum_(mu,nu) P_(mu,nu) phi.alt_mu phi.alt_nu \ 
-$
-
-矩阵形式: 
-$
-& sum_(mu,nu) P_(mu,nu) phi.alt_(A,mu,i,j) phi.alt_(A,nu,i,j)
-$
-
-其中 `A` 是原子指标, $mu, nu$ 是基函数指标, $i,j$ 分别是径向网格和角度网格指标. 
-
-矩阵形式的好处在于可以通过矩阵乘法和求和规约避免显示嵌套循环: 
-```py
-rho = np.einsum('uv,auij,avij->aij', Puv, aos_vals, aos_vals)    
-```
-
-然后通过电子密度在整个实空间上的积分可以重构出电子数:
-$
-int rho(bold(r)) d^3 bold(r) = "ne"  \ 
-$
-
-实空间上网格是以各个原子为中心构建的, 所以上述积分是对各原子积分后的总和:
-$
-& int rho(bold(r)) d^3 bold(r) = sum_A w^A int rho_A (bold(r)) d^3 bold(r) \ 
-& approx sum_A w^A sum_i w^A_i (r^A_i)^2 sum_j w^A_j rho^A_(i j)
-$
-
-其中 $w^A$ 是原子A在自己网格点上的权重, 原子权重 (Becke权重) 也组织为矩阵形式, 维度为 `(natom, nrad, nang, natom)`. 所以有: 
-$
-& int rho(bold(r)) d^3 bold(r) approx sum_A w^A sum_i w^A_i (r^A_i)^2 sum_j w^A_j rho^A_(i j) \ 
-& = sum_(A i j) w^"atom"_(A,i,j,A) (w^"rad"_(A,i) (r^"rad"_(A,i))^2) rho_(A,i,j) w^"ang"_j \ 
-$
-
-可以通过求和规约避免显示循环:
-```py
-ne = np.einsum('aija,ai,aij,j->', grid[:,:,:,3:], becke.chebs[:,:,0]**2 * becke.chebs[:,:,1], rho, becke.wleb)
-```
-
-
-
-
-
-
-
-
-
-
-
-#set math.equation(numbering: "(1)")
-= 其他
-
-- *密度矩阵*
-#set math.mat(delim: "(")
 $
 & "ne" = sum_i^"occ" 2 int |psi_i (bold(r))|^2 d^3 bold(r) \ 
 & = sum_i^"occ" int 2 (sum_mu |C_(mu,i) phi.alt_mu|) (sum_nu C_(nu,i)  phi.alt_nu) d^3 bold(r) \ 
@@ -1389,12 +1776,12 @@ $
 
 直接計算"密度矩陣" $P_(mu,nu)$ 的跡不會給出電子數, 因爲*基函數不正交*. 
 
-備註: 
-- 是否 $P S^T$ 才是真正的"密度矩陣"?
-- 使用該密度矩陣可否進行動力學演化? - NO
+
+
 
 
 - *拉普拉斯算符*
+
 球坐标下的拉普拉斯算符:
 $
 & nabla^2 = 1/r^2 partial/(partial r) (r^2 partial/(partial r)) - L^2/r^2 \ 
@@ -1420,7 +1807,7 @@ because & S^(-1/2) S^(1/2) = P s^(-1/2) P^(-1) P s^(1/2) P^(-1) \
 $
 
 2. Canonical orthogonalization
-TO BE CONTINUED...
+  ...
 
 
 - *Slater 交换泛函* 
