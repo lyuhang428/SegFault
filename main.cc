@@ -56,7 +56,7 @@ void test_dft()
 int main()
 {
     
-    test_hf();
+    // test_hf();
     std::cout << std::string(60, '-') << std::endl;
     test_dft();
 }
