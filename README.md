@@ -4,9 +4,9 @@
 
 ## About
 
-低性能，难使用的分子量子化学C++代码，目前处于非常初期阶段，仅支持闭壳层Hartree-Fock和闭壳层LDA DFT计算. 
+Low-performance, hard-to-use quantum chemistry C++ code, currently in its very early stage and only supports closed-shell Hartree-Fock and LDA level DFT calculation. 
 
-设计逻辑是不使用输入文件（或使用json传递任务），用户需要将代码作为第三方库集成到计算任务中并依据需求使用相应的接口. 
+The code is designed to be input-file-free (or use .json file to pass tasks), users should use this code as third-party library and incorporate it into computational tasks and use necessary APIs. 
 
 ## Dependencies
 
@@ -33,4 +33,4 @@ see main.cc
 
 ## Contributing
 
-该项目欢迎（急需）任何形式的贡献，包括但不限于新功能添加，性能优化，bug修复，文档更新等。
+This project welcomes (and urgently needs) contributions of any kind, include but not not limited to adding new features, performance optimization, bug fixing, docs update, etc. 
