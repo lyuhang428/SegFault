@@ -33,4 +33,4 @@ see main.cc
 
 ## Contributing
 
-This project welcomes (and urgently needs) contributions of any kind, include but not not limited to adding new features, performance optimization, bug fixing, docs update, etc. 
+This project welcomes (and urgently needs) contributions of any kinds, include but not not limited to adding new features, performance optimization, bug fixing, docs update, etc. 
