@@ -1,4 +1,4 @@
-**[en](README.md)**
+**[English](README.md)**
 
 # SegFault
 
