@@ -6,7 +6,7 @@
 
 Low-performance, hard-to-use quantum chemistry C++ code, currently in its very early stage and only supports closed-shell Hartree-Fock and LDA level DFT calculation. 
 
-The code is designed to be input-file-free (or use .json file to pass tasks), users should use this code as third-party library and incorporate it into computational tasks and use necessary APIs. 
+The code is designed to be input-file-free (or use .json file to pass tasks), users should use this code as third-party library and incorporate it into computational tasks and use corresponding APIs. 
 
 ## Dependencies
 
