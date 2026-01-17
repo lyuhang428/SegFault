@@ -13,13 +13,30 @@ PRIVATE
     src/lebedev.cc
     src/rsh.cc
 
-PUBLIC
     include/dft.hpp
     include/hf.hpp
     include/mints.hpp
     include/beckegrid.hpp
     include/lebedev.hpp
     include/rsh.hpp
+)
+
+target_include_directories(segfault
+PRIVATE
+    /path/to/include/eigen3/
+    /path/to/include/xtl/
+    /path/to/include/xtensor/
+    /path/to/include/xtensor-blas/
+    /path/to/include/libint/
+    /path/to/include/libxc/
+    /path/to/include/gsl/
+)
+
+target_link_directories(segfault
+PRIVATE
+    /path/to/lib/libint/
+    /path/to/lib/libxc/
+    /path/to/lib/gsl/
 )
 
 target_compile_features(segfault PUBLIC cxx_std_20)
