@@ -18,7 +18,7 @@ The code is designed to be input-file-free (or use .json file to pass tasks), us
 ## Installation
 ```bash
 source /path/to/intel/oneapi/setvars.sh
-export DATADIR=path/to/data/
+export DATADIR=path/to/.g94/
 ./worker.sh
 cd install/bin/
 ./segfault /path/to/mol.xyz # gbs path is hard coded in $DATADIR
