@@ -4,18 +4,6 @@
 #include <unordered_map>
 #include <string>
 
-//#ifndef M_PI
-//#define M_PI 3.14159265358979323846
-//#endif
-
-#ifndef HAVE_CBLAS
-#define HAVE_CBLAS 1 // xtensor-blas can use mkl blas then
-#endif 
-
-#ifndef EIGEN_USE_BLAS
-#define EIGEN_USE_BLAS // eigen can use mkl blas then
-#endif
-
 
 constexpr double PI  = 3.141592653589793115997963468544185161590576171875;
 constexpr double PI2 = 6.283185307179586476925286766559005768394338798750;
