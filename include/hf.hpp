@@ -2,18 +2,19 @@
 #define INCLUDE_HF_HPP
 
 #include <iostream>
+#include <format>
 #include <iomanip>
 #include <vector>
 
-#include "Eigen/Dense"
-#include "xtensor.hpp"
+#include "xtensor/containers/xtensor.hpp"
+#include "xtensor/views/xview.hpp"
+#include "xtensor/generators/xgenerator.hpp"
+#include "xtensor/io/xnpy.hpp"
 #include "libint2.hpp"
 
 #include "mints.hpp"
 #include "constants.hpp"
-
-using xxd  = Eigen::Matrix<double, -1, -1, Eigen::RowMajor>;
-using  xd  = Eigen::VectorXd;
+#include "lblas.hpp"
 
 
 
@@ -25,11 +26,12 @@ namespace sf::HF {
  * @param[in]    focks    {std::vector<xxd>} - 历史 fock 矩阵
  * @param[in]    diis_res {std::vector<xxd>} - 残差向量
 */
-void diis(xxd& fock, const std::vector<xxd>& focks, const std::vector<xxd>& diis_res);
+// void diis(xxd& fock, const std::vector<xxd>& focks, const std::vector<xxd>& diis_res);
+
+void cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xtensor<double, 2>>& focks, const std::vector<xt::xtensor<double, 2>>& diis_res);
 
 struct HF {
-    //>! mol.xyz base.g94
-    HF(const std::string& xyzfile, const std::string& name);
+    HF(const std::string& xyzfile, const std::string& name); //>! mol.xyz base.g94
     HF() = default;
     ~HF() = default;
 
@@ -41,7 +43,7 @@ struct HF {
             const bool         pure=true);
 
 private:
-    void energy_log() const;
+    // void energy_log() const;
 
     std::string                   xyzfile;
     std::string                      name;
