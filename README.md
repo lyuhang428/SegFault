@@ -11,7 +11,7 @@ The code is designed to be input-file-free (or use .json file to pass tasks), us
 ## Dependencies
 
 1. [xtensor](https://xtensor.readthedocs.io/en/latest/) (header only)
-2. [libint-11.2](https://github.com/evaleev/libint)
+2. [libint-2.11.2](https://github.com/evaleev/libint)
 3. [libxc-7.0.0](https://gitlab.com/libxc/libxc)
 4. (optional but strongly recommended) intel mkl and intel icpx compiler (version 2025.3).
 
