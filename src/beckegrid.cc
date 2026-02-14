@@ -1,5 +1,4 @@
 #include "../include/beckegrid.hpp"
-// #include "lebedev.hpp"
 
 
 double beckegrid::sk(const int k, const double nuij)
@@ -26,7 +25,6 @@ double beckegrid::sk(const int k, const double nuij)
 
 void beckegrid::sk(const int k, const xt::xtensor<double, 1>& nuij, xt::xtensor<double, 1>& sij)
 {
-    // TODO: std::execution::par ?
     assert(1 <= k && k <= 6);
     switch (k)
     {
@@ -63,60 +61,6 @@ xt::xtensor<double, 2> beckegrid::gaussCheby2(const size_t norder, const double 
 
     return zxrw;
 }
-
-// xt::xtensor<double, 1> beckegrid::poisson_solver(const xt::xtensor<double, 1>& rho_lm, const size_t l, const xt::xtensor<double, 1>& rcheb, const double rm, const double qn)
-// {
-//     assert(rho_lm.size() == rcheb.size());
-//     const int ncheb = rho_lm.size();
-
-//     xt::xtensor<double, 1>    b = xt::zeros<double>({ncheb+2}); // Ax = b
-//     xt::xtensor<double, 2> diag = xt::diag((l * (l + 1) / xt::square(rcheb)));
-
-//     xt::xtensor<double, 2>   D1 = xt::zeros<double>({ncheb+2, ncheb+2});
-//     xt::xtensor<double, 2>   D2 = xt::zeros<double>({ncheb+2, ncheb+2});
-
-//     xt::xtensor_fixed<double, xt::xshape<7>> kernel_7d1 = {-1.,   9., -45.,    0.,  45.,  -9., 1.}; kernel_7d1 /=  60.;
-//     xt::xtensor_fixed<double, xt::xshape<7>> kernel_7d2 = { 2., -27., 270., -490., 270., -27., 2.}; kernel_7d2 /= 180.;
-
-//     xt::xtensor<double, 1> dzdr2  = std::pow(ncheb + 1, 2) * rm / (PI * PI * rcheb) / xt::square(rm + rcheb);
-//     xt::xtensor<double, 1> d2zdr2 = (ncheb + 1) * std::pow(rm, 2) * (3. * rcheb + rm) / (2. * PI) / xt::pow(rcheb * rm, 1.5) / xt::square(rcheb + rm);
-
-//     xt::view(D1,       1, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{-3., -10.,  18., -6.,   1.     }; xt::view(D1,       1, xt::range(      0,       5)) /= 12.;
-//     xt::view(D1,       2, xt::range(      0,       6)) = xt::xtensor_fixed<double, xt::xshape<6>>{ 3., -30., -20., 60., -15.,  2.}; xt::view(D1,       2, xt::range(      0,       6)) /= 60.;
-//     xt::view(D1, ncheb-1, xt::range(ncheb-4, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<6>>{-2.,  15., -60., 20.,  30., -3.}; xt::view(D1, ncheb-1, xt::range(ncheb-4, ncheb+2)) /= 60.;
-//     xt::view(D1,   ncheb, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,   6., -18., 10.,   3.     }; xt::view(D1,   ncheb, xt::range(ncheb-3, ncheb+2)) /= 12.;
-
-//     for (auto i=3; i < ncheb-1; ++i) xt::view(D1, i, xt::range(i-3, i+4)) = kernel_7d1;
-//     xt::view(D1, xt::range(1,ncheb+1), xt::all()) *= xt::view(d2zdr2, xt::all(), xt::newaxis());
-
-//     xt::view(D2,       1, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{11., -20.,   6.,  4., -1.}; xt::view(D2,       1, xt::range(      0,       5)) /= 12.;
-//     xt::view(D2,       2, xt::range(      0,       5)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,  16., -30., 16., -1.}; xt::view(D2,       2, xt::range(      0,       5)) /= 12.;
-//     xt::view(D2, ncheb-1, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1., 16., -30.,  16., -1.}; xt::view(D2, ncheb-1, xt::range(ncheb-3, ncheb+2)) /= 12.;
-//     xt::view(D2,   ncheb, xt::range(ncheb-3, ncheb+2)) = xt::xtensor_fixed<double, xt::xshape<5>>{-1.,  4.,   6., -20., 11.}; xt::view(D2,   ncheb, xt::range(ncheb-3, ncheb+2)) /= 12.;
-
-//     for (auto i=3; i < ncheb-1; ++i) xt::view(D2, i, xt::range(i-3, i+4)) = kernel_7d2;
-//     xt::view(D2, xt::range(1,ncheb+1), xt::all()) *= xt::view(dzdr2, xt::all(), xt::newaxis());
-
-//     xt::xtensor<double, 2> A = D1 + D2;
-//     xt::view(A, xt::range(1, ncheb+1), xt::range(1, ncheb+1)) -= diag; // A[1:-1, 1:-1] -= diag
-//     A(0, 0) = 1.;
-//     A(ncheb+1, ncheb+1) = 1.;
-
-//     b[ncheb+1] = 0.;
-//     if (l == 0) b[0] = std::sqrt(4. * PI) * qn; else b[0] = 0.; // 边界条件
-//     xt::view(b, xt::range(1, ncheb+1)) = -4. * PI * rcheb * rho_lm;
-
-//     // Ax = b
-//     Eigen::Map<xxd> _A{A.data(), static_cast<int>(A.shape(0)), static_cast<int>(A.shape(1))};
-//     Eigen::Map<xd>  _b{b.data(), static_cast<int>(b.size())};
-//     // xd _u_lm = _A.colPivHouseholderQr().solve(_b);
-//     xd _u_lm = _A.lu().solve(_b);
-
-//     xt::xtensor<double, 1> u_lm = xt::adapt(_u_lm.data(), _u_lm.size(), xt::no_ownership(), xt::xtensor<double, 1>::shape_type{static_cast<size_t>(_u_lm.size())});
-
-//     return u_lm;
-// }
-
 
 beckegrid::BeckeFuzzyCell::BeckeFuzzyCell(const std::vector<std::string>& symbols,
                                           const std::vector<double>&          rms,
