@@ -1,4 +1,4 @@
-#include <cstdlib> // to get env
+#include <cstdlib>
 #include <iostream>
 #include <cstring>
 #include <cassert>
