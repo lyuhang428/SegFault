@@ -1,35 +1,43 @@
 #include "../include/hf.hpp"
 
-#ifndef RELEASE
-#define RELEASE
-#endif
 
-
-void sf::HF::diis(xxd& fock, const std::vector<xxd>& focks, const std::vector<xxd>& diis_res)
+void sf::HF::cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xtensor<double, 2>>& focks, const std::vector<xt::xtensor<double, 2>>& diis_res)
 {
-    std::cout << "    DIIS ENABLED\n";
-    xxd B = xxd::Zero(focks.size()+1, focks.size()+1);
-    B.bottomRows(1) = -Eigen::RowVectorXd::Ones(focks.size()+1);
-    B.rightCols(1)  = -xd::Ones(focks.size()+1);
-    B(B.rows()-1, B.cols()-1) = 0.;
+    std::cout << "cDIIS enabled\n";
+    assert(fock.shape(0) == fock.shape(1));
+    const size_t n = focks.size() + 1;
+    const size_t nbf = fock.shape(0);
+    xt::xtensor<double, 2> B = xt::zeros<double>({n, n});
+    xt::row(B, n-1) = -1.;
+    xt::col(B, n-1) = -1.;
+    B(n-1, n-1) = 0.;
 
-    for (auto ii=0; ii < focks.size(); ++ii) {
-        for (auto jj=0; jj < focks.size(); ++jj) {
-            B(ii, jj) = (diis_res[ii] * diis_res[jj].transpose()).trace();
+    for (auto ii=0; ii < n-1; ++ii) {
+        for (auto jj=ii; jj < n-1; ++jj) {
+            xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                        CblasTrans, nbf, nbf, 
+                        nbf, 1., diis_res[ii].data(), 
+                        nbf, diis_res[jj].data(), nbf, 
+                        0., tmp.data(), nbf); // diis_res[ii] @ diis_res[jj].T = tmp
+            if (jj == ii) {B(ii, jj) = ltr(tmp.data(), nbf); continue;}
+            B(ii, jj) = ltr(tmp.data(), nbf);
+            B(jj, ii) = B(ii, jj);
         }
     }
+    
+    xt::xtensor<double, 1> diis_rhs = xt::zeros<double>({n});
+    diis_rhs[n-1] = -1.;
 
-    xd diis_rhs = xd::Zero(B.rows());
-    diis_rhs[diis_rhs.size()-1] = -1.;
-    xd diis_coef = B.lu().solve(diis_rhs);
-    fock *= 0.;
-    for (auto iii=0; iii < diis_coef.size()-1; ++iii) {
-        fock += focks[iii] * diis_coef[iii];
-    }
-    fock = (fock + fock.transpose()) * 0.5;
+    std::vector<int> ipiv(n, 0);
+    int info = LAPACKE_dsysv(LAPACK_ROW_MAJOR, 'U', n, 
+                            1, B.data(), n, 
+                            ipiv.data(), diis_rhs.data(), 1); // B x diis_coef = diis_rhs ; B destroyed, diis_rhs becomes diis_coef
+    assert(info == 0);
+    fock *= 0.; // set to 0
+    for (auto iii=0; iii < n-1; ++iii) fock += focks[iii] * diis_rhs[iii];
+    fock = (fock + xt::transpose(fock)) * 0.5;    
 }
-
-
 
 
 sf::HF::HF::HF(const std::string& xyzfile, const std::string& name) : xyzfile(xyzfile), name(name)
@@ -37,19 +45,12 @@ sf::HF::HF::HF(const std::string& xyzfile, const std::string& name) : xyzfile(xy
     this->mol = sf::Molecule{xyzfile, name};
 }
 
-void sf::HF::HF::energy_log() const
-{
-    std::cout << "One-electron energy               " << std::fixed << std::setprecision(12) << std::left << this->kinetic_energies.back() + this->external_energies.back() << std::endl;
-    std::cout << "Two-electron energy               " << std::fixed << std::setprecision(12) << std::left << this->hartree_energies.back() << std::endl;
-    std::cout << "Total energy                      " << std::fixed << std::setprecision(12) << std::left << this->etots.back() << std::endl;
-    std::cout << "Energy difference                 " << std::fixed << std::setprecision(12) << std::left << this->etots.back() - this->etots[this->etots.size()-2] << std::endl;
-}
 
 void sf::HF::HF::scf(int maxiter, double e_convergence, double d_convergence, int nbuffer, const std::string& initial_guess, const bool pure)
 {
     const std::vector<libint2::Atom>& atoms = this->mol.atoms;
     const std::vector<libint2::Shell>& shells = pure ? this->mol.shells_pure : this->mol.shells_cart;
-    const int nbf = pure ? this->mol.nbf_pure : this->mol.nbf_cart;
+    const size_t nbf = pure ? this->mol.nbf_pure : this->mol.nbf_cart;
     
     const int nshell = this->mol.nshell;
     const double e_nuc = this->mol.e_nuc;
@@ -61,106 +62,234 @@ void sf::HF::HF::scf(int maxiter, double e_convergence, double d_convergence, in
     const xt::xtensor<double, 2> sij = sf::get_olp(shells);
     const xt::xtensor<double, 2> tij = sf::get_kin(shells);
     const xt::xtensor<double, 2> vij = sf::get_ext(shells, atoms);
+    const xt::xtensor<double, 2> hij = tij + vij;
 
-    const Eigen::Map<const xxd> sij_map{sij.data(), nbf, nbf};
-    const Eigen::Map<const xxd> tij_map{tij.data(), nbf, nbf};
-    const Eigen::Map<const xxd> vij_map{vij.data(), nbf, nbf};
-    const xxd Hcore = tij_map + vij_map;
 
-    Eigen::SelfAdjointEigenSolver<xxd> eigsolver;
-    eigsolver.compute(sij_map);
-    const xxd u = eigsolver.eigenvectors();
-    const xd  s = eigsolver.eigenvalues();
-    const xxd inv_s = (1. / s.array()).sqrt().matrix().asDiagonal().toDenseMatrix();
-    const xxd sij_inv_half = u * inv_s * u.transpose();
+    // 重叠矩阵正交化
+    // Sij @ u = u @ s
+    xt::xtensor<double, 2> u = xt::zeros<double>({nbf, nbf}); // vecs of Sij
+    xt::xtensor<double, 1> s = xt::zeros<double>({nbf});      // vals of Sij
+    {
+        xt::xtensor<double, 2> sij_mutable{sij};                  // sij is const, make a deep copy    
+        double sfmin = LAPACKE_dlamch('S'); // safe minium for DSYEVR
+        int m;
+        std::vector<int> isuppz(2*nbf, 0);
+        int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', 
+                                nbf, sij_mutable.data(), nbf, 0., 
+                                0., 1, nbf, 
+                                sfmin, &m, s.data(), u.data(), 
+                                nbf, isuppz.data()); // sij -> vecs: u ; vals: s
+        assert(info == 0);
+    }
 
-    std::vector<xxd> focks   ; focks.reserve(maxiter+1);
-    std::vector<xxd> diis_res; diis_res.reserve(maxiter+1);
+    xt::xtensor<double, 2> inv_s = xt::zeros<double>({nbf, nbf}); // diag(s^-1/2)
+    for (auto i=0; i < nbf; ++i) inv_s(i,i) = std::sqrt(1. / s[i]);
+    xt::xtensor<double, 2> sij_inv_half = xt::zeros<double>({nbf, nbf}); // sij_inv_half = (u @ inv_s) @ u.T
+    {
+        xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf}); // tmp is local
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., u.data(), 
+                    nbf, inv_s.data(), nbf, 
+                    0., tmp.data(), nbf);
+        
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nbf, 1., tmp.data(), 
+                    nbf, u.data(), nbf, 
+                    0., sij_inv_half.data(), nbf);
+    }
+
+    std::vector<xt::xtensor<double, 2>> focks   ; focks.reserve(maxiter+1);
+    std::vector<xt::xtensor<double, 2>> diis_res; diis_res.reserve(maxiter+1);
 
     int counter = 0;
     double etot_old = std::nan("1");
-    xxd Puv_old = xxd::Ones(nbf, nbf) * std::nan("1");
+    xt::xtensor<double, 2> Puv_old = xt::ones<double>({nbf, nbf}) * std::nan("1");
     const int ne = this->mol.ne;
     const int nocc = this->mol.nocc;
 
-    xxd fock = Hcore;
+    // initial guess Hcore
+    xt::xtensor<double, 2> fock = hij;
 
 
     /////////////
     //>! SCF <!//
     /////////////
     std::cout << "bf type " << (pure ? "pure" : "cartesian") << std::endl;
-    std::cout << "Fock shape " << "(" << fock.rows() << ", " << fock.cols() << ")" << std::endl;
-#ifdef RELEASE
+    std::cout << std::format("Fock shape = ({:>d}, {:>d})\n", fock.shape(0), fock.shape(1));
+    
     while (true) {
-#endif
-
         std::cout << "\n>!STEP " << counter+1 << std::endl;
 
-        Eigen::GeneralizedSelfAdjointEigenSolver<xxd> eigsolver2;
-        eigsolver2.compute(fock, sij_map);
-        xd  vals = eigsolver2.eigenvalues();
-        xxd vecs = eigsolver2.eigenvectors();
-        xxd Puv  = 2. * vecs.leftCols(nocc) * vecs.leftCols(nocc).transpose(); // 初始密度矩阵
+        xt::xtensor<double, 2> fprime = xt::zeros<double>({nbf, nbf}); // fprime = (sij_inv_half @ fock) @ sij_inv_half
+        xt::xtensor<double, 2> cprime = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 1> e      = xt::zeros<double>({nbf});
+        xt::xtensor<double, 2> vecs   = xt::zeros<double>({nbf, nbf});
+        
+        {
+            xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                        CblasNoTrans, nbf, nbf, 
+                        nbf, 1., sij_inv_half.data(), 
+                        nbf, fock.data(), nbf, 
+                        0., tmp.data(), nbf); // sij_inv_half @ hij = tmp
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                        CblasNoTrans, nbf, nbf, 
+                        nbf, 1., tmp.data(), 
+                        nbf, sij_inv_half.data(), nbf, 
+                        0., fprime.data(), nbf); // fprime = (sij_inv_half @ hij) @ sij_inv_half
 
-        auto [_Juv, _Kuv] = sf::get_JK(shells, Puv); // 已乘密度矩阵
-        Eigen::Map<xxd> Juv{_Juv.data(), nbf, nbf};
-        Eigen::Map<xxd> Kuv{_Kuv.data(), nbf, nbf};
+            double sfmin = LAPACKE_dlamch('S'); // safe minium for DSYEVR
+            int m;
+            std::vector<int> isuppz(2*nbf, 0);
+            int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', 
+                                    nbf, fprime.data(), nbf, 0., 
+                                    0., 1, nbf, 
+                                    sfmin, &m, e.data(), cprime.data(), 
+                                    nbf, isuppz.data()); // fprime -> vecs: cprime  vals: e
+            assert(info == 0);
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                        CblasNoTrans, nbf, nbf, 
+                        nbf, 1., sij_inv_half.data(), 
+                        nbf, cprime.data(), nbf, 
+                        0., vecs.data(), nbf); // vecs = sij_inv_half @ cprime
+        }
 
-        fock = Hcore + Juv - Kuv; fock = (fock + fock.transpose()) * 0.5;
+        xt::xtensor<double, 2> Puv = xt::zeros<double>({nbf, nbf}); // Puv = vecs[:,:nocc] @ vecs[:,:nocc].T
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nocc, 2., vecs.data(), 
+                    nbf, vecs.data(), nbf, 
+                    0., Puv.data(), nbf);
+        
+        auto [Juv, Kuv] = sf::get_JK(shells, Puv); // 已乘密度矩阵
+
+        fock = hij + Juv - Kuv; fock = (fock + xt::transpose(fock)) * 0.5;
         focks.emplace_back(fock);
-        diis_res.emplace_back(sij_inv_half * (fock * Puv * sij_map - sij_map * Puv * fock) * sij_inv_half);
-        auto adaptor_fock = xt::adapt(focks.back().data(), nbf*nbf, xt::no_ownership(), xt::xtensor<double, 2>::shape_type{static_cast<size_t>(nbf), static_cast<size_t>(nbf)});
-        auto adaptor_res  = xt::adapt(diis_res.back().data(), nbf*nbf, xt::no_ownership(), xt::xtensor<double, 2>::shape_type{static_cast<size_t>(nbf), static_cast<size_t>(nbf)});
 
-        double kin_e = (Puv * tij_map.transpose()).trace();
-        double ext_e = (Puv * vij_map.transpose()).trace();
-        double hartree_e  = (Puv * Juv.transpose()).trace() * 0.5;
-        double exchange_e = (Puv * Kuv.transpose()).trace() * -0.5;
-        double etot = 0.5 * (Puv.array() * (Hcore + fock).array()).sum() + e_nuc; // (A * B).sum() <=> (A @ B.T).trace()
+        // 收敛加速
+        // diis_res = sij_inv_half @ ((fock @ Puv) @ sij - sij @ (Puv @ fock)) @ sij_inv_half
+        xt::xtensor<double, 2> tmp_lhs = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> tmp_rhs = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> lhs     = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> rhs     = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> middle  = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> tmp     = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> residue = xt::zeros<double>({nbf, nbf});
 
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., fock.data(), 
+                    nbf, Puv.data(), nbf, 
+                    0., tmp_lhs.data(), nbf); // fock @ Puv = tmp_lhs
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., tmp_lhs.data(), 
+                    nbf, sij.data(), nbf, 
+                    0., lhs.data(), nbf); // tmp_lhs @ sij = lhs
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., Puv.data(), 
+                    nbf, fock.data(), nbf, 
+                    0., tmp_rhs.data(), nbf); // Puv @ fock = tmp_rhs
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., sij.data(), 
+                    nbf, tmp_rhs.data(), nbf, 
+                    0., rhs.data(), nbf); // tmp_rhs @ sij = rhs
+        middle = lhs - rhs;
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., sij_inv_half.data(), 
+                    nbf, middle.data(), nbf, 
+                    0., tmp.data(), nbf); // sij_inv_half @ middle = tmp
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasNoTrans, nbf, nbf, 
+                    nbf, 1., tmp.data(), 
+                    nbf, sij_inv_half.data(), nbf, 
+                    0., residue.data(), nbf); // tmp @ sij_inv_half = residue
+    
+        diis_res.emplace_back(residue);
+
+        if (counter > 2) cDIIS(fock, focks, diis_res);
+
+        
+        // energy decomposition
+        xt::xtensor<double, 2> Puv_times_tijT = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> Puv_times_vijT = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> Puv_times_JuvT = xt::zeros<double>({nbf, nbf});
+        xt::xtensor<double, 2> Puv_times_KuvT = xt::zeros<double>({nbf, nbf});
+
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nbf, 1., Puv.data(), 
+                    nbf, tij.data(),  nbf, 
+                    0., Puv_times_tijT.data(),  nbf); // Puv @ tij.T
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nbf, 1., Puv.data(), 
+                    nbf, vij.data(),  nbf, 
+                    0., Puv_times_vijT.data(),  nbf); // Puv @ vij,T
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nbf, 1., Puv.data(), 
+                    nbf, Juv.data(),  nbf, 
+                    0., Puv_times_JuvT.data(),  nbf); // Puv @ Juv.T
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
+                    CblasTrans, nbf, nbf, 
+                    nbf, 1., Puv.data(), 
+                    nbf, Kuv.data(), nbf, 
+                    0., Puv_times_KuvT.data(), nbf); // Puv @ Exuv.T
+    
+        double kin_e         = ltr(Puv_times_tijT.data(),  nbf);
+        double ext_e         = ltr(Puv_times_vijT.data(),  nbf);
+        double hartree_e     = ltr(Puv_times_JuvT.data(),  nbf) * 0.5;
+        double exchange_e    = ltr(Puv_times_KuvT.data(), nbf) * -0.5;
+        double etot = 0.5 * xt::sum(Puv * (hij + fock))() + e_nuc;
         double e_diff = etot - etot_old;
-        double d_diff = std::sqrt((Puv.array() - Puv_old.array()).square().sum());
+        double d_diff = xt::sum(xt::square(Puv - Puv_old))();
+        
+        std::cout << std::format("One-Electron energy = {:>25.15f}\n", kin_e + ext_e);
+        std::cout << std::format("Two-Electron energy = {:>25.15f}\n", hartree_e + exchange_e);
+        std::cout << std::format("Total energy        = {:>25.15f}\n", etot);
+        std::cout << std::format("Energy difference   = {:>25.15f}\n", e_diff);
+        std::cout << std::format("Density difference  = {:>25.15f}\n", d_diff);
 
-        std::cout << "One-Electron energy = " << std::setw(25) << std::setprecision(15) << std::fixed << std::right << kin_e + ext_e          << std::endl;
-        std::cout << "Two-Electron energy = " << std::setw(25) << std::setprecision(15) << std::fixed << std::right << hartree_e + exchange_e << std::endl;
-        std::cout << "Total energy        = " << std::setw(25) << std::setprecision(15) << std::fixed << std::right << etot                   << std::endl;
-        std::cout << "Energy difference   = " << std::setw(25) << std::setprecision(15) << std::fixed << std::right << e_diff                 << std::endl;
-        std::cout << "Density difference  = " << std::setw(25) << std::setprecision(15) << std::fixed << std::right << d_diff                 << std::endl;
 
         // DIIS
-        if (counter > 2) diis(fock, focks, diis_res);
+        if (counter > 2) cDIIS(fock, focks, diis_res);
 
 
-#ifdef RELEASE
-        if (std::abs(etot - etot_old) <= e_convergence && std::abs(d_diff) <= d_convergence) {
+        // convergence check
+        if (std::abs(e_diff) <= e_convergence && std::abs(d_diff) <= d_convergence) {
             std::cout << std::endl;
-            std::cout << "Doubly occupied:\n";
+            std::cout << "\nDoubly occupied:\n";
             int iorb = 1;
-            for (auto val : vals.head(nocc).transpose()) {
-                std::cout << std::setw(15) << std::setprecision(8) << std::fixed << std::right << val << "    ";
+            for (auto val : xt::view(e, xt::range(0, nocc))) {
+                std::cout << std::format("{:>15.10f}    ", val);
                 if (iorb % 4 == 0) std::cout << std::endl;
                 iorb += 1;
             }
 
             iorb = 1;
             std::cout << "\nVirtual:\n";
-            for (auto val : vals.tail(nbf-nocc).transpose()) {
-                std::cout << std::setw(15) << std::setprecision(8) << std::fixed << std::right << val << "    ";
+            for (auto val : xt::view(e, xt::range(nocc, nbf))) {
+                std::cout << std::format("{:>15.10f}    ", val);
                 if (iorb % 4 == 0) std::cout << std::endl;
                 iorb += 1;
             }
+
             std::cout << "\n>! NORMAL TERMINALTION\n";
             break;
         }
 
-        counter += 1;
+        counter++;
         etot_old = etot;
         Puv_old = Puv;
 
         if (counter > maxiter) {std::cout << "MAXITER exceeded\n"; break;}
-    }
-#endif
+    } // end while
 
 
     std::cout << ">! safe here\n";
