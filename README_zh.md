@@ -11,8 +11,8 @@
 ## Dependencies
 
 1. [xtensor](https://xtensor.readthedocs.io/en/latest/) (header only)
-2. [libint2](https://github.com/evaleev/libint)
-3. [libxc](https://gitlab.com/libxc/libxc)
+2. [libint-11.2](https://github.com/evaleev/libint)
+3. [libxc-7.0.0](https://gitlab.com/libxc/libxc)
 4. (optional but strongly recommend) intel mkl and intel icpx compiler
 
 ## Installation
