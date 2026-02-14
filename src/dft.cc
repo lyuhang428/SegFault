@@ -338,7 +338,6 @@ void sf::DFT::DFT::scf(const int maxiter,
     xt::xtensor<double, 2> vc   = xt::zeros<double>({this->natom, this->natgrid});
     xt::xtensor<double, 2> ec   = xt::zeros<double>({this->natom, this->natgrid});
 
-    // TODO: is this slow
 #ifdef TIMEIT
     const auto t2{std::chrono::steady_clock::now()};
 #endif
@@ -359,27 +358,6 @@ void sf::DFT::DFT::scf(const int maxiter,
     const auto t4{std::chrono::steady_clock::now()};
 #endif
 
-//     for (auto iatom=0; iatom < this->natom; ++iatom) {
-//         xt::xtensor<double, 1> vx_mweights = xt::row(mweights, iatom) * xt::row(vx, iatom);
-//         xt::xtensor<double, 1> vc_mweights = xt::row(mweights, iatom) * xt::row(vc, iatom);
-//         xt::xtensor<double, 1> ex_mweights = xt::row(mweights, iatom) * xt::row(ex, iatom);
-//         xt::xtensor<double, 1> ec_mweights = xt::row(mweights, iatom) * xt::row(ec, iatom);
-// #pragma omp parallel for schedule(dynamic)
-//         for (auto ibf=0; ibf < nbf; ++ibf) {
-//             for (auto jbf=ibf; jbf < nbf; ++jbf) {
-//                 Kuv(ibf, jbf)  += xt::sum(xt::row(aos_vals[iatom], ibf) * xt::row(aos_vals[iatom], jbf) * vx_mweights)(); // * xt::row(mweights, iatom) * xt::row(vx, iatom))();
-//                 Cuv(ibf, jbf)  += xt::sum(xt::row(aos_vals[iatom], ibf) * xt::row(aos_vals[iatom], jbf) * vc_mweights)(); // * xt::row(mweights, iatom) * xt::row(vc, iatom))();
-//                 Exuv(ibf, jbf) += xt::sum(xt::row(aos_vals[iatom], ibf) * xt::row(aos_vals[iatom], jbf) * ex_mweights)(); // * xt::row(mweights, iatom) * xt::row(ex, iatom))();
-//                 Ecuv(ibf, jbf) += xt::sum(xt::row(aos_vals[iatom], ibf) * xt::row(aos_vals[iatom], jbf) * ec_mweights)(); // * xt::row(mweights, iatom) * xt::row(ec, iatom))();
-//                 if (jbf > ibf) {
-//                     Kuv(jbf,  ibf) = Kuv(ibf,  jbf);
-//                     Cuv(jbf,  ibf) = Cuv(ibf,  jbf);
-//                     Exuv(jbf, ibf) = Exuv(ibf, jbf);
-//                     Ecuv(jbf, ibf) = Ecuv(ibf, jbf);
-//                 }
-//             }
-//         }
-//     }
 
 // BLAS level 3 for fock is 10x faster
 #pragma omp parallel for
@@ -555,7 +533,6 @@ void sf::DFT::DFT::scf(const int maxiter,
     const auto t8{std::chrono::steady_clock::now()};
 #endif
     // 对角化 Fock matrix
-    // xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf}); pre-defined
     {
         xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
         cblas_dgemm(CblasRowMajor, CblasNoTrans, 
