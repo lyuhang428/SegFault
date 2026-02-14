@@ -214,7 +214,7 @@ int sf::get_lmax(const std::vector<libint2::Shell>& shells)
 
 xt::xtensor<double, 2> sf::get_olp(const std::vector<libint2::Shell>& shells)
 {
-    int nshell = shells.size();
+    const int nshell = shells.size();
     int nbf = 0;
     for (const auto& shell : shells) nbf += shell.size();
 
@@ -246,6 +246,8 @@ xt::xtensor<double, 2> sf::get_olp(const std::vector<libint2::Shell>& shells)
 
     return sij;
 }
+
+
 
 xt::xtensor<double, 2> sf::get_kin(const std::vector<libint2::Shell>& shells)
 {
@@ -280,6 +282,9 @@ xt::xtensor<double, 2> sf::get_kin(const std::vector<libint2::Shell>& shells)
 
     return tij;
 }
+
+
+
 
 xt::xtensor<double, 2> sf::get_ext(const std::vector<libint2::Shell>& shells, const std::vector<libint2::Atom>& atoms)
 {
@@ -316,12 +321,75 @@ xt::xtensor<double, 2> sf::get_ext(const std::vector<libint2::Shell>& shells, co
     return vij;
 }
 
-std::pair<xt::xtensor<double, 2>, xt::xtensor<double, 2>> sf::get_JK(const std::vector<libint2::Shell>& shells, const xxd& D)
+
+xt::xtensor<double, 2> sf::get_J(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D)
 {
     const int nshell = shells.size();
     int nbf = 0;
     for (const auto& shell : shells) nbf += shell.size();
-    assert(D.rows() == nbf && D.cols() == nbf);
+    assert(D.shape(0) == nbf && D.shape(1) == nbf);
+    const int             max_nprim = get_max_nprim(shells);
+    const int                  lmax = get_lmax(shells);
+    const std::vector<size_t> shell2bf = get_shell2bf(shells);
+
+    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf}); // to be returned
+
+    auto engine = libint2::Engine(libint2::Operator::coulomb, max_nprim, lmax);
+    engine.set(libint2::CartesianShellNormalization::uniform);
+    const auto& buf = engine.results();
+
+    for (auto s1 = 0; s1 != nshell; ++s1) {
+        const auto bf1_first = shell2bf[s1];
+        const auto n1 = shells[s1].size();
+        for (auto s2 = 0; s2 <= s1; ++s2) {
+            const auto bf2_first = shell2bf[s2];
+            const auto n2 = shells[s2].size();
+            for (auto s3 = 0; s3 <= s1; ++s3) {
+                const auto bf3_first = shell2bf[s3];
+                const auto n3 = shells[s3].size();
+                const auto s4_max = (s1 == s3) ? s2 : s3;
+                for (auto s4 = 0; s4 <= s4_max; ++s4) {
+                    const auto bf4_first = shell2bf[s4];
+                    const auto n4 = shells[s4].size();
+                    const auto s12_deg = (s1 == s2) ? 1.0 : 2.0;
+                    const auto s34_deg = (s3 == s4) ? 1.0 : 2.0;
+                    const auto s12_34_deg = (s1 == s3) ? (s2 == s4 ? 1.0 : 2.0) : 2.0;
+                    const auto s1234_deg = s12_deg * s34_deg * s12_34_deg;
+
+                    engine.compute(shells[s1], shells[s2], shells[s3], shells[s4]);
+                    const auto* buf_1234 = buf[0];
+                    if (buf_1234 == nullptr) continue;
+
+                    for (auto f1 = 0, f1234 = 0; f1 != n1; ++f1) {
+                        const auto bf1 = f1 + bf1_first;
+                        for (auto f2 = 0; f2 != n2; ++f2) {
+                            const auto bf2 = f2 + bf2_first;
+                            for (auto f3 = 0; f3 != n3; ++f3) {
+                                const auto bf3 = f3 + bf3_first;
+                                for (auto f4 = 0; f4 != n4; ++f4, ++f1234) {
+                                    const auto bf4               = f4 + bf4_first;
+                                    const auto value             = buf_1234[f1234];
+                                    const auto value_scal_by_deg = value * s1234_deg;
+                                    Juv(bf1, bf2) += 0.5 * D(bf3, bf4) * value_scal_by_deg;
+                                    Juv(bf3, bf4) += 0.5 * D(bf1, bf2) * value_scal_by_deg;
+                                }
+                            }
+                        }
+                    } // end value assignment
+                }
+            }
+        }
+    }
+    Juv = (Juv + xt::transpose(Juv)) * 0.5;
+    return Juv;
+}
+
+std::pair<xt::xtensor<double, 2>, xt::xtensor<double, 2>> sf::get_JK(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D)
+{
+    const int nshell = shells.size();
+    int nbf = 0;
+    for (const auto& shell : shells) nbf += shell.size();
+    assert(D.shape(0) == nbf && D.shape(1) == nbf);
     const int             max_nprim = get_max_nprim(shells);
     const int                  lmax = get_lmax(shells);
     const std::vector<size_t> shell2bf = get_shell2bf(shells);
@@ -426,43 +494,10 @@ sf::Molecule::Molecule(const std::string& xyzfile, const std::string& name) : xy
     this->e_nuc = get_e_nuc();
 }
 
-xxd sf::Molecule::make_tf() const
-{
-    const int nrow = this->nbf_pure;
-    const int ncol = this->nbf_cart;
-    xxd TF = xxd::Zero(nrow, ncol); // to be returned
 
-    int row_offset = 0;
-    int col_offset = 0;
 
-    for (auto ishell=0; ishell < this->nshell; ++ishell) {
-        if (this->nbf_in_shells_pure[ishell] == 1 && this->nbf_in_shells_cart[ishell] == 1) { // s-orbital
-            TF(row_offset, col_offset) = 1.;
-            row_offset++;
-            col_offset++;
-        }
-        else if (this->nbf_in_shells_pure[ishell] == 3 && this->nbf_in_shells_cart[ishell] == 3) { // p
-            TF.block(row_offset, col_offset, 3, 3) = tf1;
-            row_offset += 3;
-            col_offset += 3;
-        }
-        else if (this->nbf_in_shells_pure[ishell] == 5 && this->nbf_in_shells_cart[ishell] == 6) { // d
-            TF.block(row_offset, col_offset, 5, 6) = tf2;
-            row_offset += 5;
-            col_offset += 6;
-        }
-        else if (this->nbf_in_shells_pure[ishell] == 7 && this->nbf_in_shells_cart[ishell] == 10) { // f
-            TF.block(row_offset, col_offset, 7, 10) = tf3;
-            row_offset += 7;
-            col_offset += 10;
-        }
-        else {std::cerr << "Beyond f-orbital not available\n"; exit(-1);};
-    }
 
-    return TF;
-}
-
-xt::xtensor<double, 2> sf::Molecule::make_tf_xt() const
+xt::xtensor<double, 2> sf::Molecule::make_tf() const
 {
     const int nrow = this->nbf_pure;
     const int ncol = this->nbf_cart;
