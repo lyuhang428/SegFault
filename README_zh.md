@@ -4,9 +4,9 @@
 
 ## About
 
-低性能，难使用的分子量子化学C++代码，目前处于非常初期阶段，仅支持闭壳层Hartree-Fock和闭壳层LDA DFT计算. 
+低性能，难使用的分子量子化学C++代码，目前处于非常初期阶段，仅支持闭壳层 HF, LDA, GGA 计算. 
 
-设计逻辑是不使用输入文件（或使用json传递任务），用户需要将代码作为第三方库集成到计算任务中并依据需求使用相应的接口. 
+设计逻辑是不使用输入文件（或未来使用json传递任务），用户需要将代码作为第三方库集成到计算任务中并依据需求使用相应的接口. 
 
 ## Dependencies
 
@@ -18,10 +18,9 @@
 ## Installation
 ```bash
 source /path/to/intel/oneapi/setvars.sh
-export DATADIR=path/to/.g94/
 ./worker.sh
 cd ./install/bin/
-./segfault /path/to/mol.xyz
+./segfault /path/to/mol.xyz /path/to/gbs [X_id C_id]
 ```
 
 ## Example
