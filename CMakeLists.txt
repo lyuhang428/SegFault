@@ -1,10 +1,11 @@
-cmake_minimum_required(VERSION 3.23)
-project(segfault LANGUAGES CXX VERSION 0.0.1)
+cmake_minimum_required(VERSION 3.20)
+project(segfault LANGUAGES CXX VERSION 0.0.3)
 
 set(VAR_TIMEIT "ON")
 set(VAR_RELEASE "ON")
 
 add_executable(segfault)
+# add_library(segfault)
 
 target_sources(segfault
 PRIVATE
@@ -24,7 +25,7 @@ PRIVATE
 )
 
 target_compile_features(segfault PRIVATE cxx_std_20)
-target_compile_definitions(segfault 
+target_compile_definitions(segfault
 PRIVATE 
     RELEASE=${VAR_RELEASE}
     TIMEIT=${VAR_TIMEIT}
@@ -35,14 +36,15 @@ message("RELEASE is ${VAR_RELEASE}")
 message("TIMEIT is ${VAR_TIMEIT}")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU") # g++
+# TODO: use openblas if GNU
     target_include_directories(segfault
     PRIVATE
-        /path/to/intel/oneapi/mkl/version/include/
+        /home/lyh/intel/oneapi/mkl/2025.3/include/
     )
 
     target_link_directories(segfault
     PRIVATE
-        /path/to/intel/oneapi/mkl/version/lib/
+        /home/lyh/intel/oneapi/mkl/2025.3/lib/
     )
 
     target_compile_options(segfault PRIVATE -Wall -Wno-sign-compare -Wno-unused-variable -m64 -fopenmp) # how to link the right openmp lib?    
@@ -64,8 +66,9 @@ endif()
 # lib to libxc and libint
 # target_link_directories(segfault
 # PRIVATE
-
+#     ./lib/
 # )
+
 
 
 target_link_libraries(segfault
