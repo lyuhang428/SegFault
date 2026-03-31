@@ -1,11 +1,16 @@
-#ifndef INCLUDE_LBLAS_HPP
-#define INCLUDE_LBLAS_HPP
+#pragma once 
 
+#define Intel
+// TODO: check if openblas and mkl use different arguments
+
+#if defined GNU
+#include "OpenBLAS/include/cblas.h"
+#include "OpenBLAS/include/lapacke.h"
+#elif defined Intel
 #include "mkl_cblas.h"
 #include "mkl_lapacke.h"
+#endif
 
-//>! this header includes lapacke and cblas
-//>! TODO: add openblas support
 //>! compute trace
 template<typename T>
 inline T ltr(const T* data, const int n)
@@ -16,5 +21,3 @@ inline T ltr(const T* data, const int n)
 }
 
 
-
-#endif
