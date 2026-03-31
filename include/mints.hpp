@@ -1,5 +1,4 @@
-#ifndef INCLUDE_MINTS_HPP
-#define INCLUDE_MINTS_HPP
+#pragma once
 
 #include <iostream>
 #include <iomanip>
@@ -101,6 +100,7 @@ xt::xtensor<double, 2> get_ext(const std::vector<libint2::Shell>& shells, const 
 */
 std::pair<xt::xtensor<double, 2>, xt::xtensor<double, 2>> get_JK(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D);
 xt::xtensor<double, 2> get_J(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D);
+xt::xtensor<double, 2> get_J_par(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D);
 
 
 
@@ -118,25 +118,25 @@ private:
     double get_e_nuc() const;
 
 public:
-    std::vector<libint2::Atom>        atoms;
+    std::vector<libint2::Atom>  atoms;
     std::vector<libint2::Shell> shells_pure;
     std::vector<libint2::Shell> shells_cart;
     std::vector<libint2::Shell> shells_cart_noembed; // this is only used in reading in g94, DO NOT USE IT IN CALC
-    std::string                     xyzfile;
-    std::string                        name;
-    int                               natom;
-    int                              nshell; // same for both cart and pure
-    int                            nbf_cart; // total nbf in cart
-    int                            nbf_pure; // total nbf in pure, different from nbf_cart if >= d orbitals involved
-    std::vector<int>     nbf_in_shells_cart; // i.e. SSSPPD => {1 1 1 3 3 6}
-    std::vector<int>     nbf_in_shells_pure; // SSSPPD => {1 1 1 3 3 5} this vector is needed to build cart2pure transform matrix
-    std::vector<std::string>        symbols;
-    std::vector<double>                 rms; // Bragg-Slater radii
-    std::vector<int>                numbers; // charges
-    xt::xtensor<double, 2>              xyz; // taken from this->atoms, in Bohr
-    double                            e_nuc; // return from this->get_e_nuc()
-    int                                  ne; // number of electron
-    int                                nocc; // occupation (=ne//2)
+    std::string                 xyzfile;
+    std::string                 name;
+    int                         natom;
+    int                         nshell;             // same for both cart and pure
+    int                         nbf_cart;           // total nbf in cart
+    int                         nbf_pure;           // total nbf in pure, different from nbf_cart if >= d orbitals involved
+    std::vector<int>            nbf_in_shells_cart; // i.e. SSSPPD => {1 1 1 3 3 6}
+    std::vector<int>            nbf_in_shells_pure; // SSSPPD => {1 1 1 3 3 5} this vector is needed to build cart2pure transform matrix
+    std::vector<std::string>    symbols;
+    std::vector<double>         rms;                // Bragg-Slater radii
+    std::vector<int>            numbers;            // charges
+    xt::xtensor<double, 2>      xyz;                // taken from this->atoms, in Bohr
+    double                      e_nuc;              // return from this->get_e_nuc()
+    int                         ne;                 // number of electron
+    int                         nocc;               // occupation (=ne//2)
 };
 
 
@@ -168,13 +168,19 @@ struct BFs {
     BFs(const Molecule& mol);
     BFs() = default;
     ~BFs() = default;
-    
+
     //>! all bf value at one point {nbf, } cart
-    xt::xtensor<double, 1> ao_val(double x, double y, double z) const;
-
+    xt::xtensor<double, 1> get_ao_val(double x, double y, double z) const;
+    
     //>! all bf values at multiple points {nbf, npoints} cart
-    xt::xtensor<double, 2> ao_val(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z) const;
+    xt::xtensor<double, 2> get_ao_val(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z) const;
 
+    //>! cart basis function gradient values on one point [{nbf_cart,}, {nbf_cart,}, {nbf_cart,}]
+    std::array<xt::xtensor<double, 1>, 3> get_ao_grad(double x, double y, double z);
+
+    //>! on many points [(nbf_cart, npoints), (nbf_cart, npoints), (nbf_cart, npoints)]
+    std::array<xt::xtensor<double, 2>, 3> get_ao_grad(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z);
+    
     std::vector<BF> bfs;
     int nbf; // 一定是 cartesian
 };
@@ -183,4 +189,3 @@ struct BFs {
 
 } // end namespace sf
 
-#endif
