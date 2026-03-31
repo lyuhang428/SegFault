@@ -1730,6 +1730,312 @@ vec(
 $
 
 
+= GGA 交换相关势矩阵元
+#align(center)[
+    #table(
+        align: left, 
+        columns: 2, 
+        rows: 4, 
+        stroke: none, 
+        [Quantity], [Expression],
+        [electron density], [$n(bvec(r))$], 
+        [xc energy density], [$epsilon_"xc" = epsilon_"xc" (n(bvec(r)), nabla n, bvec(r))$], 
+        [xc energy], [$E_"xc" [n] = integral n epsilon_"xc" d^3 bvec(r)$], 
+        [xc potential], [$V_"xc" [n] = (delta E_"xc" [n])/(delta n)$]
+    )
+]
+
+
+含有梯度的欧拉-拉格朗日方程：
+$
+& F[n] = int f(n, nabla n, bvec(r)) d^3 bvec(r) \
+& F[n + delta n] = int f(n + delta n, nabla(n + delta n), bvec(r)) d^3 bvec(r) \
+
+& "Taylor expansion to 1st order" => \ 
+& F[n + delta n] = int f(n, nabla n, bvec(r)) + (partial f)/(partial n) delta n + (partial f)/(partial (nabla n)) dot.c nabla (delta n) d^3 bvec(r) \
+
+& delta F = int (partial f)/(partial n) delta n + (partial f)/(partial (nabla n)) dot.c nabla (delta n) d^3 bvec(r) \
+$
+
+$(partial f)/(partial (nabla n))$ 是向量, $nabla (delta n)$ 也是向量, 二者之间通过向量点积联系在一起. 
+
+$
+& int (partial f)/(partial (nabla n)) dot.c nabla (delta n) d^3 bvec(r) = int nabla dot.c ((partial f)/(partial (nabla n)) delta n) - (nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) \ 
+
+& = int nabla dot.c ((partial f)/(partial (nabla n)) delta n) d^3 bvec(r) - int (nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) \ 
+
+& = integral.surf_S ((partial f)/(partial (nabla n)) delta n) dot.c d bvec(S) - int (nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) \ 
+$
+
+首先用散度定理将体积分转变为闭合曲面积分，又 $delta n$ 在边界处为零，所以上式第一项为零：
+$
+& int (partial f)/(partial (nabla n)) dot.c nabla (delta n) d^3 bvec(r) = - int (nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) \ 
+
+& delta F = int (partial f)/(partial n) delta n - (nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) = int ((partial f)/(partial n) - nabla dot.c (partial f)/(partial (nabla n))) delta n d^3 bvec(r) \ 
+
+& delta F = int (delta F)/(delta n) delta n d^3 bvec(r) \ 
+& => (delta F[n])/(delta n) = (partial f)/(partial n) - nabla dot.c (partial f)/(partial (nabla n)) \ 
+$
+
+Let $E_"xc" [n] = int n epsilon_"xc" d^3 bvec(r)$:
+$
+& epsilon_"xc" = epsilon_"xc" (n, nabla n, bvec(r)) \ 
+& V_"xc" [n] = (delta E_"xc" [n])/(delta n) = (partial n epsilon)/(partial n) - nabla dot.c (partial n epsilon)/(partial nabla n) \ 
+
+& = epsilon + n (partial epsilon)/(partial n) - nabla dot.c n (partial epsilon)/(partial nabla n) \ 
+
+& \ 
+& n (partial epsilon)/(partial nabla n) = n (partial epsilon)/(partial |nabla n|^2) (partial |nabla n|^2)/(partial nabla n) \ 
+
+& = n (partial epsilon)/(partial |nabla n|^2) 2 nabla n \ 
+
+& => nabla dot.c n (partial epsilon)/(partial nabla n) = 2 nabla dot.c (n (partial epsilon)/(partial |nabla n|^2) nabla n) \
+
+
+& => V_"xc" [n] = epsilon + n (partial epsilon)/(partial n) - 2 nabla dot.c (n (partial epsilon)/(partial |nabla n|^2) nabla n) \ 
+$
+
+问题变为如何规避显示计算散度. 
+
+由于我们实际需要的是矩阵元 $chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r$ 而不是势 $V_"xc"$ 本身，可以通过散度定理和边界条件回避掉散度的计算. 
+
+Let $|nabla n|^2 = sigma$: 
+$
+& V_"xc" [n] = epsilon + n (partial epsilon)/(partial n) - 2 nabla dot.c (n (partial epsilon)/(partial sigma) nabla n) \
+
+& chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r = int phi.alt_i^ast {epsilon + n (partial epsilon)/(partial n) - 2 nabla dot.c (n (partial epsilon)/(partial sigma) nabla n)} phi.alt_j d^3 bvec(r) \ 
+
+& = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) - 2 int phi.alt_i phi.alt_j nabla dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \ 
+
+& \ 
+& int phi.alt_i phi.alt_j nabla dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) = int nabla dot.c (phi.alt_i phi.alt_j n (partial epsilon)/(partial sigma) nabla n) - nabla (phi.alt_i phi.alt_j) dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \ 
+
+& = underbrace(integral.surf_S phi.alt_i phi.alt_j n (partial epsilon)/(partial sigma) nabla n dot.c d bvec(S), "fn decays to zero on infinite surface") - int nabla (phi.alt_i phi.alt_j) dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \ 
+
+& = - int nabla (phi.alt_i phi.alt_j) dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \ 
+$
+
+So 
+$
+& chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r = int phi.alt_i^ast {epsilon + n (partial epsilon)/(partial n) - 2 nabla dot.c (n (partial epsilon)/(partial sigma) nabla n)} phi.alt_j d^3 bvec(r) \ 
+
+& = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) - 2 int phi.alt_i phi.alt_j nabla dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \
+
+& = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) + 2 int nabla (phi.alt_i phi.alt_j) dot.c (n (partial epsilon)/(partial sigma) nabla n) d^3 bvec(r) \ 
+
+& = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) + 2 int n (partial epsilon)/(partial sigma) nabla (phi.alt_i phi.alt_j) dot.c nabla n d^3 bvec(r) \ 
+
+& = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) + 2 int n (partial epsilon)/(partial sigma) (phi.alt_j nabla phi.alt_i dot.c nabla n + phi.alt_i nabla phi.alt_j dot.c nabla n) d^3 bvec(r) \ 
+$
+
+
+总结：
+#block(stroke: red, inset: 1em)[
+$
+& sigma = |nabla n|^2 \
+& E_"xc" [n] = int n epsilon_"xc" (n, nabla n, bvec(r)) d^3 bvec(r) \
+& V_"xc" [n] = (delta E_"xc" [n])/(delta n) = epsilon + n (partial epsilon)/(partial n) - nabla dot.c (n (partial epsilon)/(partial nabla n)) \
+
+& (partial epsilon)/(partial nabla n) = (partial epsilon)/(partial sigma) dot.c (partial sigma)/(partial nabla n) \
+
+& => V_"xc" [n] = epsilon + n (partial epsilon)/(partial n) - 2 nabla dot.c (n (partial epsilon)/(partial sigma) nabla n) \ 
+
+& chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) + 2 int n (partial epsilon)/(partial sigma) (phi.alt_j nabla phi.alt_i dot.c nabla n + phi.alt_i nabla phi.alt_j dot.c nabla n) d^3 bvec(r) \ 
+$
+]
+
+以高斯基函数，闭壳层体系为例，首先计算电子密度 `rho` = $n(bvec(r))$ 和电子密度梯度模平方 `sigma` = $|nabla n(bvec(r))|^2$ 在网格上的值，然后传参给 `libxc`. 
+
+`libxc` 会返回 `zk`, `vrho`, `vsigma`. 这三者分别代表：
+#table(
+    columns: 3,
+    rows: 3,
+    stroke: none,
+    [Quantity], [Meaning], [Unit],
+    [`rho`], [$n(bvec(r))$], [particle/volumn],
+    [`zk`], [$epsilon = epsilon(n, nabla n, bvec(r))$], [energy density, energy/particle],
+    [`vrho`], [$(partial n epsilon)/(partial n) = epsilon + n (partial epsilon)/(partial n) $], [energy/particle, which is energy/coulomb, which is unit of potential], 
+    [`vsigma`], [$(partial n epsilon)/(partial sigma) = n (partial epsilon)/(partial sigma)$], [---]
+)
+
+
+
+再看交换相关势矩阵元: 
+$
+& chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r = int phi.alt_i phi.alt_j (epsilon + n (partial epsilon)/(partial n)) d^3 bvec(r) + 2 int n (partial epsilon)/(partial sigma) (phi.alt_j nabla phi.alt_i dot.c nabla n + phi.alt_i nabla phi.alt_j dot.c nabla n) d^3 bvec(r) \ 
+
+& (epsilon + n (partial epsilon)/(partial n)) -> "vrho" \ 
+& n (partial epsilon)/(partial sigma) -> "vsigma" \ 
+& => chevron.l phi.alt_i|V_"xc"|phi.alt_j chevron.r = int phi.alt_i phi.alt_j "vrho" d^3 bvec(r) + 2 int "vsigma" (phi.alt_j nabla phi.alt_i dot.c nabla n + phi.alt_i nabla phi.alt_j dot.c nabla n) d^3 bvec(r) \ 
+$
+
+$V_"xc"$ 参与到 Fock 矩阵的构建中，而计算交换相关能量需要的是矩阵 ${chevron.l phi.alt_i|epsilon_"xc"|phi.alt_i chevron.r}_("nbf" times "nbf")$. 
+
+$
+& E_"xc" = int n epsilon d^3 bvec(r) = int (sum_i^"nbf" 2 |f_i|^2) epsilon d^3 bvec(r) \ 
+
+& = int sum_mu^"nbf" sum_nu^"nbf" underbrace((sum_i^"nbf//2" 2 C_(mu i) C_(nu i)), P_(mu nu)) phi.alt_mu phi.alt_nu epsilon d^3 bvec(r) \ 
+
+& = int sum_(mu nu) P_(mu nu) phi.alt_mu phi.alt_nu epsilon d^3 bvec(r) \ 
+
+& = sum_(mu nu) P_(mu nu) int phi.alt_mu epsilon phi.alt_nu d^3 bvec(r) = sum_(mu nu) P_(mu nu) chevron.l mu|epsilon|nu chevron.r \ 
+$
+
+即在通过 `libxc` 得到 `zk` = $epsilon$ 后计算交换相关能量密度矩阵 ${chevron.l mu|epsilon|nu chevron.r}_("nbf" times "bnf")$, 然后与密度矩阵 $P_(mu nu)$ 做矩阵乘法后取迹即得交换相关能量. 
+
+
+
+
+= 数值计算
+假设有 $N$ 个基函数，在某个原子的原子网格上有 $M$ 个网格点，基函数离散化后可以组织成矩阵形式：
+$
+& {Phi}_(N times M) = mat(
+    phi.alt_1 (bvec(r)_1), phi.alt_1 (bvec(r)_2), dots.c, phi.alt_1 (bvec(r)_M) ; 
+
+    phi.alt_2 (bvec(r)_1), phi.alt_2 (bvec(r)_2), dots.c, phi.alt_2 (bvec(r)_M) ; 
+
+    dots.v , dots.v , dots.down , dots.v ; 
+
+    phi.alt_N (bvec(r)_1), phi.alt_N (bvec(r)_2), dots.c, phi.alt_N (bvec(r)_M) ; 
+)
+$
+
+在点 $bvec(r) = bvec(r)_g$ 处可以从上述矩阵中提取向量：
+$
+bvec(Phi)(bvec(r)_g) = vec(
+    phi.alt_1 (bvec(r)_g) , 
+    phi.alt_2 (bvec(r)_g) , 
+    dots.v ,
+    phi.alt_N (bvec(r)_g) , 
+)
+$
+
+同理可以定义基函数的梯度离散后的矩阵形式和向量形式：
+$
+& {partial_x Phi}_(N times M) = mat(
+    partial_x phi.alt_1 (bvec(r)_1), partial_x phi.alt_1 (bvec(r)_2), dots.c, partial_x phi.alt_1 (bvec(r)_M) ; 
+
+    partial_x phi.alt_2 (bvec(r)_1), partial_x phi.alt_2 (bvec(r)_2), dots.c, partial_x phi.alt_2 (bvec(r)_M) ; 
+
+    dots.v , dots.v , dots.down , dots.v ; 
+
+    partial_x phi.alt_N (bvec(r)_1), partial_x phi.alt_N (bvec(r)_2), dots.c, partial_x phi.alt_N (bvec(r)_M) ; 
+) \ 
+
+& bvec(Phi)_x (bvec(r)_g) = vec(
+    partial_x phi.alt_1 (bvec(r)_g) , 
+    partial_x phi.alt_2 (bvec(r)_g) , 
+    dots.v ,
+    partial_x phi.alt_N (bvec(r)_g) , 
+)
+$
+
+梯度的 $y$-分量和 $z$-分量同理. 
+
+电子密度的梯度为（闭壳层）：
+$
+& n = sum_(mu nu) P_(mu nu) phi.alt_mu phi.alt_nu \ 
+& nabla n = sum_(mu nu) P_(mu nu) (nabla phi.alt_mu phi.alt_nu + phi.alt_mu nabla phi.alt_nu) = 2 sum_(mu nu) P_(mu nu) phi.alt_mu nabla phi.alt_nu = 2 sum_(mu nu) phi.alt_mu P_(mu nu) nabla phi.alt_nu \ 
+$
+
+先只考虑电子密度梯度的 $x$-分量，上式变为：
+$
+partial_x n = 2 sum_(mu nu) phi.alt_mu P_(mu nu) partial_x phi.alt_nu \
+$<eq1>
+
+由于共有 $M$ 个网格点，所以 $partial_x n$ 应该是长度为 $M$ 的一维数组. 尽管上式看起来很像 $bvec(a)^T A bvec(b)$，但是如果将 $partial_x Phi$ 直接代入会得到 ${partial_x Phi}_(N times M)^T {P_(mu nu)}_(N times N) {partial_x Phi}_(N times M) -> "mat"_(M times M)$. 很明显维度是错的，而且由于网格点数目的量级至少在 $~10^4$，这样得到的结果会是至少含有亿级元素数量的矩阵，内存爆炸. 
+
+然而 @eq1 仍然可以通过矩阵操作规避掉显示双层循环. 
+
+如果先只考虑一个点 $bvec(r) = bvec(r)_g$: 
+$
+& partial_x n|_bvec(r)_g = 2 sum_(mu nu) phi.alt_mu|_bvec(r)_g P_(mu nu) partial_x phi.alt_nu|_bvec(r)_g \
+
+& = 2 bvec(Phi)(bvec(r)_g)^T {P_(mu nu)}_(N times N) bvec(Phi)_x (bvec(r)_g)
+$
+
+给出的是一个数. 所以可以通过遍历所有网格点计算电子密度梯度在网格上的值. 
+
+虽然不能直接上矩阵乘法，但是可以通过逐元相乘+矩阵乘法规避掉显式循环 
+```py
+nbf = 300
+natgrid = 96 * 596
+Puv = np.random.randn(nbf, nbf)
+Puv += Puv.T
+Phi = np.random.randn(nbf, natgrid)
+Phi_gradx = np.random.randn(nbf, natgrid)
+
+eden_gradx = np.sum(Phi * (Puv @ Phi_gradx), axis=0)
+eden_gradx2 = np.einsum('ij, jk, ik->k', Puv, Phi_gradx, Phi, optimize=True)
+eden_gradx3 = np.zeros((natgrid,))
+for i in range(natgrid):
+    eden_gradx3[i] = np.dot(Phi[:, i], Puv @ Phi_gradx[:, i])
+
+eden_gradx4 = np.zeros((natgrid,))
+for i in range(nbf):
+    for j in range(nbf):
+        eden_gradx4 += Phi[i] * Phi_gradx[j] * Puv[i,j]
+
+np.testing.assert_allclose(eden_gradx, eden_gradx2)
+np.testing.assert_allclose(eden_gradx, eden_gradx3)
+np.testing.assert_allclose(eden_gradx, eden_gradx4)
+```
+
+#align(center)[
+    #table(
+        columns: 3,
+        [
+$partial_x n = 2 sum_(mu nu) phi.alt_mu P_(mu nu) partial_x phi.alt_nu$
+        ], 
+        [$-->$],
+        
+        [```py  2 * np.sum(Phi * (Puv @ Phi_gradx), axis=0)```], 
+
+        [
+$partial_y n = 2 sum_(mu nu) phi.alt_mu P_(mu nu) partial_y phi.alt_nu$
+        ],
+        [$-->$],
+
+        [```py  2 * np.sum(Phi * (Puv @ Phi_grady), axis=0)```],
+
+        [
+$partial_z n = 2 sum_(mu nu) phi.alt_mu P_(mu nu) partial_z phi.alt_nu$
+        ],
+        [$-->$],
+        
+        [```py  2 * np.sum(Phi * (Puv @ Phi_gradz), axis=0)```]
+    )
+]
+
+电子密度在网格上的值组织成 `(3, natgrid)` 维度的矩阵，一二三行分别对应 $x$-, $y$-, $z$-分量. 
+
+第 $i$ 个基函数及其梯度在网格上的值：
+$
+& phi.alt_i -> mat(phi.alt_i (bvec(r)_1), phi.alt_i (bvec(r)_2), dots.c, phi.alt_i (bvec(r)_M)) \ 
+
+& nabla phi.alt_i -> mat(
+    partial_x phi.alt_i|_(bvec(r)_1), partial_x phi.alt_i|_(bvec(r)_2), dots.c, partial_x phi.alt_i|_(bvec(r)_M) ; 
+
+    partial_y phi.alt_i|_(bvec(r)_1), partial_y phi.alt_i|_(bvec(r)_2), dots.c, partial_y phi.alt_i|_(bvec(r)_M) ; 
+
+    partial_z phi.alt_i|_(bvec(r)_1), partial_z phi.alt_i|_(bvec(r)_2), dots.c, partial_z phi.alt_i|_(bvec(r)_M) ; 
+    ) \ 
+
+& nabla n -> mat(
+    partial_x n|_(bvec(r)_1), partial_x n|_(bvec(r)_2), dots.c, partial_x n|_(bvec(r)_M) ; 
+
+    partial_y n|_(bvec(r)_1), partial_y n|_(bvec(r)_2), dots.c, partial_y n|_(bvec(r)_M) ; 
+
+    partial_z n|_(bvec(r)_1), partial_z n|_(bvec(r)_2), dots.c, partial_z n|_(bvec(r)_M) ; 
+    ) \ 
+$
+
+通过 $nabla phi.alt$ 与 $nabla n$ 逐元素相乘然后沿 `axis=0` 求和即得 $nabla phi.alt dot.c nabla n$. 
+
+在每一轮 `scf` 都需要更新电子密度和电子密度的梯度在网格上的值. 
+
+
+
 
 
 
