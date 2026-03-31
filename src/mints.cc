@@ -11,8 +11,6 @@ std::vector<std::array<int, 3>> sf::cart_ordering(int ltot)
 
     assert(ltot >= 0);
     int nbf_cart = (ltot + 1) * (ltot + 2) / 2;
-    // int nbf_pure = 2 * l + 1;
-
     std::vector<std::array<int, 3>> table_cart;
     table_cart.reserve(nbf_cart);
 
@@ -31,7 +29,7 @@ std::vector<std::array<int, 3>> sf::cart_ordering(int ltot)
 std::vector<std::vector<libint2::Shell>> sf::read_g94_basis_library(std::string file_dot_g94, bool force_cartesian_d, bool throw_if_missing, std::string locale_name)
 {
     std::locale locale(locale_name.c_str());
-    std::vector<std::vector<libint2::Shell>> ref_shells(119); // to be returned
+    std::vector<std::vector<libint2::Shell>> ref_shells(119);
     std::ifstream is(file_dot_g94);
     is.imbue(locale);
 
@@ -151,7 +149,7 @@ std::vector<libint2::Shell> sf::make_shells(const std::vector<libint2::Atom>& at
 {
     std::vector<std::vector<libint2::Shell>> basis = read_g94_basis_library(file_dot_g94);
 
-    std::vector<libint2::Shell> shells; // TO BE RETURNED
+    std::vector<libint2::Shell> shells;
 
     for (const auto& atom : atoms) {
         assert(basis[atom.atomic_number].size() > 0);
@@ -167,7 +165,7 @@ std::vector<libint2::Shell> sf::_make_shells_cart_noembed(const std::vector<libi
 {
     std::vector<std::vector<libint2::Shell>> basis = read_g94_basis_library(file_dot_g94);
 
-    std::vector<libint2::Shell> shells; // TO BE RETURNED
+    std::vector<libint2::Shell> shells;
 
     for (const auto& atom : atoms) {
         assert(basis[atom.atomic_number].size() > 0);
@@ -181,7 +179,7 @@ std::vector<libint2::Shell> sf::_make_shells_cart_noembed(const std::vector<libi
 
 std::vector<size_t> sf::get_shell2bf(const std::vector<libint2::Shell>& shells)
 {
-    std::vector<size_t> shell2bf; // to be returned
+    std::vector<size_t> shell2bf;
     shell2bf.reserve(shells.size());
     int id0 = 0;
     for (const auto& shell : shells) {
@@ -195,7 +193,7 @@ size_t sf::get_max_nprim(const std::vector<libint2::Shell>& shells)
 {
     size_t max_nprim = 0;
     for (const auto& shell : shells) max_nprim > shell.nprim() ?  : max_nprim = shell.nprim();
-    assert(max_nprim > 0); // at least 1
+    assert(max_nprim > 0);
     return max_nprim;
 }
 
@@ -205,7 +203,7 @@ int sf::get_lmax(const std::vector<libint2::Shell>& shells)
     for (const auto& shell : shells) {
         for (const auto& contr : shell.contr) lmax > contr.l ? : lmax = contr.l;
     }
-    assert(lmax >= 0); // cannot be negative
+    assert(lmax >= 0);
     return lmax;
 }
 
@@ -215,13 +213,13 @@ xt::xtensor<double, 2> sf::get_olp(const std::vector<libint2::Shell>& shells)
     int nbf = 0;
     for (const auto& shell : shells) nbf += shell.size();
 
-    xt::xtensor<double, 2> sij = xt::zeros<double>({nbf, nbf}); // to be returned
+    xt::xtensor<double, 2> sij = xt::zeros<double>({nbf, nbf});
 
     const std::vector<size_t> shell2bf = get_shell2bf(shells);
     const size_t             max_nprim = get_max_nprim(shells);
     const int                     lmax = get_lmax(shells);
 
-    auto engine = libint2::Engine{libint2::Operator::overlap, max_nprim, lmax, 0}; // 0 means no deriv
+    auto engine = libint2::Engine{libint2::Operator::overlap, max_nprim, lmax, 0};
     engine.set(libint2::CartesianShellNormalization::uniform);
 
     const auto& buf_vec = engine.results();
@@ -329,7 +327,7 @@ xt::xtensor<double, 2> sf::get_J(const std::vector<libint2::Shell>& shells, cons
     const int                  lmax = get_lmax(shells);
     const std::vector<size_t> shell2bf = get_shell2bf(shells);
 
-    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf}); // to be returned
+    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf});
 
     auto engine = libint2::Engine(libint2::Operator::coulomb, max_nprim, lmax);
     engine.set(libint2::CartesianShellNormalization::uniform);
@@ -392,11 +390,11 @@ xt::xtensor<double, 2> sf::get_J_par(const std::vector<libint2::Shell>& shells, 
     const int                  lmax = get_lmax(shells);
     const std::vector<size_t> shell2bf = get_shell2bf(shells);
 
-    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf}); // to be returned
+    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf});
 
 #pragma omp parallel
 {
-    xt::xtensor<double, 2> Juv_local = xt::zeros<double>({nbf, nbf}); // local copy for each thread
+    xt::xtensor<double, 2> Juv_local = xt::zeros<double>({nbf, nbf});
 
     auto engine = libint2::Engine(libint2::Operator::coulomb, max_nprim, lmax);
     engine.set(libint2::CartesianShellNormalization::uniform);
@@ -576,28 +574,28 @@ xt::xtensor<double, 2> sf::Molecule::make_tf() const
 {
     const int nrow = this->nbf_pure;
     const int ncol = this->nbf_cart;
-    xt::xtensor<double, 2> TF = xt::zeros<double>({nrow, ncol}); // to be returned 块对角矩阵，高度稀疏
+    xt::xtensor<double, 2> TF = xt::zeros<double>({nrow, ncol});
 
     int row_offset = 0;
     int col_offset = 0;
 
     for (auto ishell=0; ishell < this->nshell; ++ishell) {
-        if (this->nbf_in_shells_pure[ishell] == 1 && this->nbf_in_shells_cart[ishell] == 1) { // s-orbital
+        if (this->nbf_in_shells_pure[ishell] == 1 && this->nbf_in_shells_cart[ishell] == 1) {
             TF(row_offset, col_offset) = 1.;
             row_offset++;
             col_offset++;
         }
-        else if (this->nbf_in_shells_pure[ishell] == 3 && this->nbf_in_shells_cart[ishell] == 3) { // p
+        else if (this->nbf_in_shells_pure[ishell] == 3 && this->nbf_in_shells_cart[ishell] == 3) {
             xt::view(TF, xt::range(row_offset, row_offset+3), xt::range(col_offset, col_offset+3)) = xt::adapt(tf1.data(), tf1.size(), xt::no_ownership(), xt::xtensor<double, 2>::shape_type{3,3});
             row_offset += 3;
             col_offset += 3;
         }
-        else if (this->nbf_in_shells_pure[ishell] == 5 && this->nbf_in_shells_cart[ishell] == 6) { // d
+        else if (this->nbf_in_shells_pure[ishell] == 5 && this->nbf_in_shells_cart[ishell] == 6) {
             xt::view(TF, xt::range(row_offset, row_offset+5), xt::range(col_offset, col_offset+6)) = xt::adapt(tf2.data(), tf2.size(), xt::no_ownership(), xt::xtensor<double, 2>::shape_type{5,6});
             row_offset += 5;
             col_offset += 6;
         }
-        else if (this->nbf_in_shells_pure[ishell] == 7 && this->nbf_in_shells_cart[ishell] == 10) { // f
+        else if (this->nbf_in_shells_pure[ishell] == 7 && this->nbf_in_shells_cart[ishell] == 10) {
             xt::view(TF, xt::range(row_offset, row_offset+7), xt::range(col_offset, col_offset+10)) = xt::adapt(tf3.data(), tf3.size(), xt::no_ownership(), xt::xtensor<double, 2>::shape_type{7,10});
             row_offset += 7;
             col_offset += 10;
@@ -626,7 +624,7 @@ double sf::Molecule::get_e_nuc() const
 
 sf::BFs::BFs(const sf::Molecule& mol)
 {
-    std::vector<BF> _bfs; // to be moved
+    std::vector<BF> _bfs;
     for (const auto& shell : mol.shells_cart_noembed) {
         int l = shell.contr[0].l;
         std::vector<std::array<int, 3>> orderings = cart_ordering(l);
@@ -649,7 +647,7 @@ sf::BFs::BFs(const sf::Molecule& mol)
 xt::xtensor<double, 1> sf::BFs::get_ao_val(double x, double y, double z) const
 {
     xt::xtensor_fixed<double, xt::xshape<3>> xyz = {x, y, z};
-    xt::xtensor<double, 1> res_cart = xt::zeros<double>({static_cast<size_t>(this->nbf)}); // to be returned {nbf, }
+    xt::xtensor<double, 1> res_cart = xt::zeros<double>({static_cast<size_t>(this->nbf)});
 
     size_t ibf = 0;
     for (const auto& bf : this->bfs) {
@@ -668,7 +666,7 @@ xt::xtensor<double, 2> sf::BFs::get_ao_val(const xt::xtensor<double, 1>& x, cons
     assert(x.size() == y.size() && x.size() == z.size());
     size_t npoints = x.size();
 
-    xt::xtensor<double, 2> res_cart = xt::zeros<double>({static_cast<size_t>(this->nbf), npoints}); // to be returned {nbf, npoints}
+    xt::xtensor<double, 2> res_cart = xt::zeros<double>({static_cast<size_t>(this->nbf), npoints});
 
     size_t ibf = 0;
     for (const auto& bf : this->bfs) {
@@ -693,14 +691,14 @@ std::array<xt::xtensor<double, 1>, 3> sf::BFs::get_ao_grad(double x, double y, d
     const size_t nbf = this->nbf;
     const xt::xtensor_fixed<double, xt::xshape<3>> xyz = {x, y, z};
     double poly_x, poly_y, poly_z;
-    xt::xtensor<double, 1> res_x = xt::zeros<double>({nbf}); // to be assembled and returned
-    xt::xtensor<double, 1> res_y = xt::zeros<double>({nbf}); // to be assembled and returned
-    xt::xtensor<double, 1> res_z = xt::zeros<double>({nbf}); // to be assembled and returned
+    xt::xtensor<double, 1> res_x = xt::zeros<double>({nbf});
+    xt::xtensor<double, 1> res_y = xt::zeros<double>({nbf});
+    xt::xtensor<double, 1> res_z = xt::zeros<double>({nbf});
 
     int ibf = 0;
     for (const auto& bf : this->bfs) {
         const size_t nprim = bf.nprim;
-        xt::xtensor<double, 1> radial = xt::exp(-bf.exponents * xt::sum(xt::square(xyz - bf.center))); // exp(-alpha |r-R|^2) {nprim,}
+        xt::xtensor<double, 1> radial = xt::exp(-bf.exponents * xt::sum(xt::square(xyz - bf.center)));
         xt::xtensor<double, 1> partial_x = xt::zeros<double>({nprim}); 
         xt::xtensor<double, 1> partial_y = xt::zeros<double>({nprim});
         xt::xtensor<double, 1> partial_z = xt::zeros<double>({nprim});
@@ -740,9 +738,9 @@ std::array<xt::xtensor<double, 2>, 3> sf::BFs::get_ao_grad(const xt::xtensor<dou
     const size_t npoints = x.size();
     const size_t nbf = this->nbf;
 
-    xt::xtensor<double, 2> res_x = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
-    xt::xtensor<double, 2> res_y = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
-    xt::xtensor<double, 2> res_z = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
+    xt::xtensor<double, 2> res_x = xt::zeros<double>({nbf, npoints});
+    xt::xtensor<double, 2> res_y = xt::zeros<double>({nbf, npoints});
+    xt::xtensor<double, 2> res_z = xt::zeros<double>({nbf, npoints});
 
     xt::xtensor<double, 1> poly_x = xt::zeros<double>({npoints});
     xt::xtensor<double, 1> poly_y = xt::zeros<double>({npoints});
