@@ -4,9 +4,9 @@
 
 ## About
 
-Low-performance, hard-to-use quantum chemistry C++ code, currently in its very early stage and only supports closed-shell Hartree-Fock and LDA level DFT calculation. 
+Low-performance, hard-to-use quantum chemistry C++ code, currently in its very early stage and only supports closed-shell HF, LDA and GGA calculation. 
 
-The code is designed to be input-file-free (or use .json file to pass tasks), users should use this code as third-party library and incorporate it into computational tasks and use corresponding APIs. 
+The code is designed to be input-file-free (or use .json file to pass tasks in future), users should use this code as third-party library and incorporate it into computational tasks and use corresponding APIs. 
 
 ## Dependencies
 
@@ -18,10 +18,9 @@ The code is designed to be input-file-free (or use .json file to pass tasks), us
 ## Installation
 ```bash
 source /path/to/intel/oneapi/setvars.sh
-export DATADIR=path/to/.g94/
 ./worker.sh
 cd install/bin/
-./segfault /path/to/mol.xyz # gbs path is hard coded in $DATADIR
+./segfault /path/to/mol.xyz /path/to/gbs [X_id C_id]
 ```
 
 ## Example
