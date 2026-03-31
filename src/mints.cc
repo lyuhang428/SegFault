@@ -28,10 +28,7 @@ std::vector<std::array<int, 3>> sf::cart_ordering(int ltot)
 
 
 //>! copied from libint
-std::vector<std::vector<libint2::Shell>> sf::read_g94_basis_library(std::string file_dot_g94,
-                                                                           bool force_cartesian_d,
-                                                                           bool throw_if_missing,
-                                                                           std::string locale_name)
+std::vector<std::vector<libint2::Shell>> sf::read_g94_basis_library(std::string file_dot_g94, bool force_cartesian_d, bool throw_if_missing, std::string locale_name)
 {
     std::locale locale(locale_name.c_str());
     std::vector<std::vector<libint2::Shell>> ref_shells(119); // to be returned
@@ -384,6 +381,84 @@ xt::xtensor<double, 2> sf::get_J(const std::vector<libint2::Shell>& shells, cons
     return Juv;
 }
 
+
+xt::xtensor<double, 2> sf::get_J_par(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D)
+{
+    const int nshell = shells.size();
+    int nbf = 0;
+    for (const auto& shell : shells) nbf += shell.size();
+    assert(D.shape(0) == nbf && D.shape(1) == nbf);
+    const int             max_nprim = get_max_nprim(shells);
+    const int                  lmax = get_lmax(shells);
+    const std::vector<size_t> shell2bf = get_shell2bf(shells);
+
+    xt::xtensor<double, 2> Juv = xt::zeros<double>({nbf, nbf}); // to be returned
+
+#pragma omp parallel
+{
+    xt::xtensor<double, 2> Juv_local = xt::zeros<double>({nbf, nbf}); // local copy for each thread
+
+    auto engine = libint2::Engine(libint2::Operator::coulomb, max_nprim, lmax);
+    engine.set(libint2::CartesianShellNormalization::uniform);
+    const auto& buf = engine.results();
+
+#pragma omp for schedule(dynamic)
+    for (auto s1 = 0; s1 != nshell; ++s1) {
+        const auto bf1_first = shell2bf[s1];
+        const auto n1 = shells[s1].size();
+        for (auto s2 = 0; s2 <= s1; ++s2) {
+            const auto bf2_first = shell2bf[s2];
+            const auto n2 = shells[s2].size();
+            for (auto s3 = 0; s3 <= s1; ++s3) {
+                const auto bf3_first = shell2bf[s3];
+                const auto n3 = shells[s3].size();
+                const auto s4_max = (s1 == s3) ? s2 : s3;
+                for (auto s4 = 0; s4 <= s4_max; ++s4) {
+                    const auto bf4_first = shell2bf[s4];
+                    const auto n4 = shells[s4].size();
+                    const auto s12_deg = (s1 == s2) ? 1.0 : 2.0;
+                    const auto s34_deg = (s3 == s4) ? 1.0 : 2.0;
+                    const auto s12_34_deg = (s1 == s3) ? (s2 == s4 ? 1.0 : 2.0) : 2.0;
+                    const auto s1234_deg = s12_deg * s34_deg * s12_34_deg;
+
+                    engine.compute(shells[s1], shells[s2], shells[s3], shells[s4]);
+                    const auto* buf_1234 = buf[0];
+                    if (buf_1234 == nullptr) continue;
+
+                    for (auto f1 = 0, f1234 = 0; f1 != n1; ++f1) {
+                        const auto bf1 = f1 + bf1_first;
+                        for (auto f2 = 0; f2 != n2; ++f2) {
+                            const auto bf2 = f2 + bf2_first;
+                            for (auto f3 = 0; f3 != n3; ++f3) {
+                                const auto bf3 = f3 + bf3_first;
+                                for (auto f4 = 0; f4 != n4; ++f4, ++f1234) {
+                                    const auto bf4               = f4 + bf4_first;
+                                    const auto value             = buf_1234[f1234];
+                                    const auto value_scal_by_deg = value * s1234_deg;
+                                    Juv_local(bf1, bf2) += 0.5 * D(bf3, bf4) * value_scal_by_deg;
+                                    Juv_local(bf3, bf4) += 0.5 * D(bf1, bf2) * value_scal_by_deg;
+                                }
+                            }
+                        }
+                    } // end value assignment
+                }
+            }
+        }
+    }
+
+#pragma omp critical
+{
+    Juv += Juv_local;
+}
+
+} // end omp parallel
+
+    Juv = (Juv + xt::transpose(Juv)) * 0.5;
+    return Juv;
+}
+
+
+
 std::pair<xt::xtensor<double, 2>, xt::xtensor<double, 2>> sf::get_JK(const std::vector<libint2::Shell>& shells, const xt::xtensor<double, 2>& D)
 {
     const int nshell = shells.size();
@@ -533,6 +608,7 @@ xt::xtensor<double, 2> sf::Molecule::make_tf() const
     return TF;
 }
 
+
 double sf::Molecule::get_e_nuc() const
 {
     double _e_nuc = 0;
@@ -569,7 +645,8 @@ sf::BFs::BFs(const sf::Molecule& mol)
     this->nbf = this->bfs.size();
 }
 
-xt::xtensor<double, 1> sf::BFs::ao_val(double x, double y, double z) const
+
+xt::xtensor<double, 1> sf::BFs::get_ao_val(double x, double y, double z) const
 {
     xt::xtensor_fixed<double, xt::xshape<3>> xyz = {x, y, z};
     xt::xtensor<double, 1> res_cart = xt::zeros<double>({static_cast<size_t>(this->nbf)}); // to be returned {nbf, }
@@ -585,7 +662,8 @@ xt::xtensor<double, 1> sf::BFs::ao_val(double x, double y, double z) const
     return res_cart;
 }
 
-xt::xtensor<double, 2> sf::BFs::ao_val(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z) const
+
+xt::xtensor<double, 2> sf::BFs::get_ao_val(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z) const
 {
     assert(x.size() == y.size() && x.size() == z.size());
     size_t npoints = x.size();
@@ -594,9 +672,13 @@ xt::xtensor<double, 2> sf::BFs::ao_val(const xt::xtensor<double, 1>& x, const xt
 
     size_t ibf = 0;
     for (const auto& bf : this->bfs) {
-        xt::xtensor<double, 1> _angular = xt::pow(x - bf.center[0], bf.lxyz[0]) * xt::pow(y - bf.center[1], bf.lxyz[1]) * xt::pow(z - bf.center[2], bf.lxyz[2]);
+        auto dx = x - bf.center[0];
+        auto dy = y - bf.center[1];
+        auto dz = z - bf.center[2];
+        auto r2 = dx*dx + dy*dy + dz*dz;
+        xt::xtensor<double, 1> _angular = xt::pow(dx, bf.lxyz[0]) * xt::pow(dy, bf.lxyz[1]) * xt::pow(dz, bf.lxyz[2]);
         for (auto iprim=0; iprim < bf.nprim; ++iprim) {
-            xt::xtensor<double, 1> _radial = xt::exp(-bf.exponents[iprim] * (xt::square(x - bf.center[0]) + xt::square(y - bf.center[1]) + xt::square(z - bf.center[2])));
+            xt::xtensor<double, 1> _radial = xt::exp(-bf.exponents[iprim] * r2);
             xt::row(res_cart, ibf) += bf.coefficients[iprim] * bf.normfactors[iprim] * _angular * _radial;
         }
         ibf++;
@@ -604,4 +686,111 @@ xt::xtensor<double, 2> sf::BFs::ao_val(const xt::xtensor<double, 1>& x, const xt
 
     return res_cart;
 }
+
+
+std::array<xt::xtensor<double, 1>, 3> sf::BFs::get_ao_grad(double x, double y, double z)
+{
+    const size_t nbf = this->nbf;
+    const xt::xtensor_fixed<double, xt::xshape<3>> xyz = {x, y, z};
+    double poly_x, poly_y, poly_z;
+    xt::xtensor<double, 1> res_x = xt::zeros<double>({nbf}); // to be assembled and returned
+    xt::xtensor<double, 1> res_y = xt::zeros<double>({nbf}); // to be assembled and returned
+    xt::xtensor<double, 1> res_z = xt::zeros<double>({nbf}); // to be assembled and returned
+
+    int ibf = 0;
+    for (const auto& bf : this->bfs) {
+        const size_t nprim = bf.nprim;
+        xt::xtensor<double, 1> radial = xt::exp(-bf.exponents * xt::sum(xt::square(xyz - bf.center))); // exp(-alpha |r-R|^2) {nprim,}
+        xt::xtensor<double, 1> partial_x = xt::zeros<double>({nprim}); 
+        xt::xtensor<double, 1> partial_y = xt::zeros<double>({nprim});
+        xt::xtensor<double, 1> partial_z = xt::zeros<double>({nprim});
+
+        poly_x = bf.lxyz[0] == 0 ? 1. : std::pow(x - bf.center[0], bf.lxyz[0]);
+        poly_y = bf.lxyz[1] == 0 ? 1. : std::pow(y - bf.center[1], bf.lxyz[1]);
+        poly_z = bf.lxyz[2] == 0 ? 1. : std::pow(z - bf.center[2], bf.lxyz[2]);
+        
+        // ∂x
+        if (bf.lxyz[0] == 0) {partial_x = -2. * bf.exponents * (x - bf.center[0]);}
+        else if (bf.lxyz[0] == 1) {partial_x = 1. - 2. * bf.exponents * (x - bf.center[0]) * (x - bf.center[0]);}
+        else {partial_x = std::pow(x - bf.center[0], bf.lxyz[0]-1) * (bf.lxyz[0] - 2. * bf.exponents * (x - bf.center[0]) * (x - bf.center[0]));}
+        res_x[ibf] = xt::sum(bf.coefficients * bf.normfactors * partial_x * poly_y * poly_z * radial)();
+
+        // ∂y
+        if (bf.lxyz[1] == 0) {partial_y = -2. * bf.exponents * (y - bf.center[1]);}
+        else if (bf.lxyz[1] == 1) {partial_y = 1. - 2. * bf.exponents * (y - bf.center[1]) * (y - bf.center[1]);}
+        else {partial_y = std::pow(y - bf.center[1], bf.lxyz[1]-1) * (bf.lxyz[1] - 2. * bf.exponents * (y - bf.center[1]) * (y - bf.center[1]));}
+        res_y[ibf] = xt::sum(bf.coefficients * bf.normfactors * poly_x * partial_y * poly_z * radial)();
+
+        // ∂z
+        if (bf.lxyz[2] == 0) {partial_z = -2. * bf.exponents * (z - bf.center[2]);}
+        else if (bf.lxyz[2] == 1) {partial_z = 1. - 2. * bf.exponents * (z - bf.center[2]) * (z - bf.center[2]);}
+        else {partial_z = std::pow(z - bf.center[2], bf.lxyz[2]-1) * (bf.lxyz[2] - 2. * bf.exponents * (z - bf.center[2]) * (z - bf.center[2]));}
+        res_z[ibf] = xt::sum(bf.coefficients * bf.normfactors * poly_x * poly_y * partial_z * radial)();
+
+        ibf++;
+    }
+
+    return {res_x, res_y, res_z};
+}
+
+
+std::array<xt::xtensor<double, 2>, 3> sf::BFs::get_ao_grad(const xt::xtensor<double, 1>& x, const xt::xtensor<double, 1>& y, const xt::xtensor<double, 1>& z)
+{
+    assert(x.size() == y.size() && x.size() == z.size());
+    const size_t npoints = x.size();
+    const size_t nbf = this->nbf;
+
+    xt::xtensor<double, 2> res_x = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
+    xt::xtensor<double, 2> res_y = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
+    xt::xtensor<double, 2> res_z = xt::zeros<double>({nbf, npoints}); // to be assembled and returned
+
+    xt::xtensor<double, 1> poly_x = xt::zeros<double>({npoints});
+    xt::xtensor<double, 1> poly_y = xt::zeros<double>({npoints});
+    xt::xtensor<double, 1> poly_z = xt::zeros<double>({npoints});
+    xt::xtensor<double, 1> radial = xt::zeros<double>({npoints});
+
+    xt::xtensor<double, 1> partial_x = xt::zeros<double>({npoints});
+    xt::xtensor<double, 1> partial_y = xt::zeros<double>({npoints});
+    xt::xtensor<double, 1> partial_z = xt::zeros<double>({npoints});
+
+    int ibf = 0;
+    for (const auto& bf : this->bfs) {
+        const size_t nprim = bf.nprim;
+        if (bf.lxyz[0] != 0) {poly_x = xt::pow(x - bf.center[0], bf.lxyz[0]);} else {poly_x = xt::ones<double>({npoints});}
+        if (bf.lxyz[1] != 0) {poly_y = xt::pow(y - bf.center[1], bf.lxyz[1]);} else {poly_y = xt::ones<double>({npoints});}
+        if (bf.lxyz[2] != 0) {poly_z = xt::pow(z - bf.center[2], bf.lxyz[2]);} else {poly_z = xt::ones<double>({npoints});}
+
+        auto dx = x - bf.center[0];
+        auto dy = y - bf.center[1];
+        auto dz = z - bf.center[2];
+        auto r2 = dx*dx + dy*dy + dz*dz;
+
+        for (auto iprim=0; iprim < nprim; ++iprim) {
+            radial = xt::exp(-bf.exponents[iprim] * r2);
+            
+            // ∂x
+            if (bf.lxyz[0] == 0) partial_x = -2. * bf.exponents[iprim] * dx;
+            else if (bf.lxyz[0] == 1) partial_x = 1. - 2. * bf.exponents[iprim] * dx * dx;
+            else partial_x = xt::pow(dx, bf.lxyz[0]-1) * (bf.lxyz[0] - 2. * bf.exponents[iprim] * dx * dx);
+            xt::row(res_x, ibf) += bf.coefficients[iprim] * bf.normfactors[iprim] * partial_x * poly_y * poly_z * radial;
+
+            // ∂y
+            if (bf.lxyz[1] == 0) partial_y = -2. * bf.exponents[iprim] * dy;
+            else if (bf.lxyz[1] == 1) partial_y = 1. - 2. * bf.exponents[iprim] * dy * dy;
+            else partial_y = xt::pow(dy, bf.lxyz[1]-1) * (bf.lxyz[1] - 2. * bf.exponents[iprim] * dy * dy);
+            xt::row(res_y, ibf) += bf.coefficients[iprim] * bf.normfactors[iprim] * poly_x * partial_y * poly_z * radial;
+
+            // ∂z
+            if (bf.lxyz[2] == 0) partial_z = -2. * bf.exponents[iprim] * dz;
+            else if (bf.lxyz[2] == 1) partial_z = 1. - 2. * bf.exponents[iprim] * dz * dz;
+            else partial_z = xt::pow(dz, bf.lxyz[2]-1) * (bf.lxyz[2] - 2. * bf.exponents[iprim] * dz * dz);
+            xt::row(res_z, ibf) += bf.coefficients[iprim] * bf.normfactors[iprim] * poly_x * poly_y * partial_z * radial;
+        }
+        
+        ibf++;
+    }
+
+    return {res_x, res_y, res_z};
+}
+
 
