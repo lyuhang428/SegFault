@@ -1,9 +1,5 @@
 #include "../include/dft.hpp"
 
-#ifdef TIMEIT
-#include <chrono>
-#endif
-
 
 
 sf::DFT::DFT::DFT(const std::string& xyzfile, const std::string& name) : xyzfile(xyzfile), name(name)
@@ -12,34 +8,69 @@ sf::DFT::DFT::DFT(const std::string& xyzfile, const std::string& name) : xyzfile
 }
 
 
-void sf::DFT::DFT::header_log() const
+void sf::DFT::DFT::_init_lda()
 {
-    std::cout << std::format("Number of atoms          = {:<d}\n", this->natom);
-    std::cout << std::format("Number of electrons      = {:<d}\n", this->ne);
-    std::cout << std::format("Number of radial grids   = {:<d}\n", this->nrad);
-    std::cout << std::format("Number of angular grids  = {:<d}\n", this->nang);
-    std::cout << std::format("Number of total grids    = {:<d}\n", this->ngrid);
-    std::cout << std::format("Nuclear repulsion energy = {:<.15f} a.u.\n", this->mol.e_nuc);
-    std::cout << std::endl;
+    // just less typing
+    const size_t nbf_cart = this->nbf_cart;
+    const size_t nbf_pure = this->nbf_pure;
+    const size_t natom = this->natom;
+    const size_t natgrid = this->natgrid;
+    const auto grid_global = this->becke.build_grid2(); // std::vector<xtensor<double, 2>>} - [natom, (natgrid, 3)]
+
+    this->aos_vals_cart = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})};
+    this->aos_vals_pure = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
+
+    sf::BFs bfs{this->mol};
+    const xt::xtensor<double, 2> TF = this->mol.make_tf(); // (nbf_pure, nbf_cart)
+
+    for (auto iatom=0; iatom < natom; ++iatom) {
+        this->aos_vals_cart[iatom] = bfs.get_ao_val(xt::col(grid_global[iatom], 0), xt::col(grid_global[iatom], 1), xt::col(grid_global[iatom], 2)); // (nbf_cart, natgrid)
+        
+        // TF @ cart = pure (nbf_pure, natgrid)
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf_pure, natgrid, nbf_cart, 1., TF.data(), nbf_cart, this->aos_vals_cart[iatom].data(), natgrid, 0., this->aos_vals_pure[iatom].data(), natgrid);
+    }
 }
 
 
-void sf::DFT::DFT::energy_log() const
+void sf::DFT::DFT::_init_gga()
 {
-    std::cout << std::format("Number of electron via quadrature = {:>.12f}\n", this->ne_quads.back());
-    std::cout << std::format("One-electron energy               = {:>.12f}\n", this->kinetic_energies.back() + this->external_energies.back());
-    std::cout << std::format("Two-electron energy               = {:>.12f}\n", this->hartree_energies.back());
-    std::cout << std::format("Exchange-correlation energy       = {:>.12f}    {:>.12f}    {:>.12f}\n", this->exchange_energies.back() + this->correlation_energies.back(), this->exchange_energies.back(), this->correlation_energies.back());
-    std::cout << std::format("Total energy                      = {:>.12f}\n", this->etots.back());
-    std::cout << std::format("Energy difference                 = {:>.12f}\n", this->etots.back() - this->etots[this->etots.size()-2]);
+    // just less typing
+    const size_t nbf_cart = this->nbf_cart;
+    const size_t nbf_pure = this->nbf_pure;
+    const size_t natom = this->natom;
+    const size_t natgrid = this->natgrid;
+    const auto grid_global = this->becke.build_grid2(); // std::vector<xtensor<double, 2>>} - [natom, (natgrid, 3)]
+
+    this->aos_vals_cart       = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})}; // [natom, (nbf_cart, natgrid)]
+    this->aos_vals_pure       = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
+    this->aos_vals_gradx_cart = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})};
+    this->aos_vals_grady_cart = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})};
+    this->aos_vals_gradz_cart = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})};
+    this->aos_vals_gradx_pure = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
+    this->aos_vals_grady_pure = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
+    this->aos_vals_gradz_pure = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
+
+    sf::BFs bfs{this->mol};
+    const xt::xtensor<double, 2> TF = this->mol.make_tf(); // (nbf_pure, nbf_cart)
+
+#pragma omp for
+    for (auto iatom=0; iatom < natom; ++iatom) {
+        this->aos_vals_cart[iatom] = bfs.get_ao_val(xt::col(grid_global[iatom], 0), xt::col(grid_global[iatom], 1), xt::col(grid_global[iatom], 2));
+        auto aos_vals_grads_cart = bfs.get_ao_grad(xt::col(grid_global[iatom], 0), xt::col(grid_global[iatom], 1), xt::col(grid_global[iatom], 2));
+        this->aos_vals_gradx_cart[iatom] = std::move(aos_vals_grads_cart[0]);
+        this->aos_vals_grady_cart[iatom] = std::move(aos_vals_grads_cart[1]);
+        this->aos_vals_gradz_cart[iatom] = std::move(aos_vals_grads_cart[2]);
+
+        // TF @ cart = pure (nbf_pure, natgrid)
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf_pure, natgrid, nbf_cart, 1., TF.data(), nbf_cart, this->aos_vals_cart[iatom].data(), natgrid, 0., this->aos_vals_pure[iatom].data(), natgrid);
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf_pure, natgrid, nbf_cart, 1., TF.data(), nbf_cart, this->aos_vals_gradx_cart[iatom].data(), natgrid, 0., this->aos_vals_gradx_pure[iatom].data(), natgrid);
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf_pure, natgrid, nbf_cart, 1., TF.data(), nbf_cart, this->aos_vals_grady_cart[iatom].data(), natgrid, 0., this->aos_vals_grady_pure[iatom].data(), natgrid);
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf_pure, natgrid, nbf_cart, 1., TF.data(), nbf_cart, this->aos_vals_gradz_cart[iatom].data(), natgrid, 0., this->aos_vals_gradz_pure[iatom].data(), natgrid);
+    }
 }
 
 
-void sf::DFT::DFT::init(const int          radial_points,
-                        const int          angular_level,
-                        const int          k,
-                        const bool         biased,
-                        const std::string& radial_scheme)
+void sf::DFT::DFT::_init(int radial_points, int angular_level, int k, bool biased, std::string radial_scheme, int xc_family)
 {
     this->becke    = beckegrid::BeckeFuzzyCell{mol.symbols, mol.rms, mol.numbers, mol.xyz, static_cast<size_t>(radial_points), static_cast<size_t>(angular_level),static_cast<size_t>(k), biased};
     this->natom    = mol.natom;
@@ -56,50 +87,154 @@ void sf::DFT::DFT::init(const int          radial_points,
     this->nrad    = static_cast<int>(becke.nrad);
     this->natgrid = this->nrad * this->nang;
     this->ngrid   = this->natom * this->nrad * this->nang;
-    
-    // just too lazy to type static_cast<size_t>
-    const size_t nbf_cart = this->nbf_cart;
-    const size_t nbf_pure = this->nbf_pure;
-    const size_t natom = this->natom;
-    const size_t natgrid = this->natgrid;
-    
-    const auto grid_global = this->becke.build_grid2();
-    xt::xtensor<double, 2> grid_total = xt::zeros<double>({this->ngrid, 3});
-    for (auto iatom=0; iatom < this->natom; ++iatom)
-    {
-        auto view_tmp = xt::view(grid_total, xt::range(iatom * this->natgrid, (iatom+1) * this->natgrid), xt::all());
-        view_tmp = grid_global[iatom];
-    }
-    
-    // [natom, (nbf, natgrid)]
-    this->aos_vals_cart = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_cart, natgrid})};
-    this->aos_vals_pure = std::vector<xt::xtensor<double, 2>>{natom, xt::zeros<double>({nbf_pure, natgrid})};
 
-    sf::BFs bfs{this->mol};
-    const xt::xtensor<double, 2> TF = this->mol.make_tf();
+    // compute basis fnval and/or gradient
+    if      (xc_family == XC_FAMILY_LDA) {std::cout << "Initialize LDA functional\n"; this->_init_lda();}
+    else if (xc_family == XC_FAMILY_GGA) {std::cout << "Initialize GGA functional\n"; this->_init_gga();}
+    else {std::cerr << "Unknown or un-supported xc\n"; exit(-1);}
+}
 
-#pragma omp parallel for schedule(dynamic)
-    for (auto iatom=0; iatom < this->natom; ++iatom) {
-        auto x_view = xt::col(grid_global[iatom], 0); // x
-        auto y_view = xt::col(grid_global[iatom], 1); // y
-        auto z_view = xt::col(grid_global[iatom], 2); // z
-        auto ao_val_tmp = bfs.ao_val(x_view, y_view, z_view); // (nbf, natgrid)
-        this->aos_vals_cart[iatom] = ao_val_tmp;
-        xt::xtensor<double, 2> view_cart_mat{this->aos_vals_cart[iatom]};
-        xt::xtensor<double, 2> view_pure_mat = xt::zeros<double>({TF.shape(0), view_cart_mat.shape(1)});
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, TF.shape(0), view_cart_mat.shape(1), 
-                    view_cart_mat.shape(0), 1., TF.data(), 
-                    TF.shape(1), view_cart_mat.data(), view_cart_mat.shape(1), 
-                    0., view_pure_mat.data(), view_pure_mat.shape(1)); // TF @ view_cart_map = view_pure_mat
-        this->aos_vals_pure[iatom] = view_pure_mat;
-    }
-} // end DFT.init()
+
+xt::xtensor<double, 1> sf::DFT::DFT::compute_rho(const xt::xtensor<double, 2>& Puv, const xt::xtensor<double, 2>& aos_vals)
+{
+    const size_t nbf = Puv.shape(0);
+    const size_t natgrid = aos_vals.shape(1);
+    xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, natgrid});
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, natgrid, nbf, 1., Puv.data(), nbf, aos_vals.data(), natgrid, 0., tmp.data(), natgrid);
+    return xt::sum(aos_vals * tmp, {0}); // ∑_μν φ_μ P_μν φ_ν = sum(φ_μ * (P_μν @ φ_ν), axis=0)
+}
+
+
+std::array<xt::xtensor<double, 1>, 3> sf::DFT::DFT::compute_rho_grad(const xt::xtensor<double, 2>& Puv, 
+                                                                     const xt::xtensor<double, 2>& aos_vals, 
+                                                                     const xt::xtensor<double, 2>& aos_vals_gradx, 
+                                                                     const xt::xtensor<double, 2>& aos_vals_grady, 
+                                                                     const xt::xtensor<double, 2>& aos_vals_gradz)
+{
+    const size_t nbf = Puv.shape(0);
+    const size_t natgrid = aos_vals.shape(1);
+    xt::xtensor<double, 2> tmp_x = xt::zeros<double>({nbf, natgrid});
+    xt::xtensor<double, 2> tmp_y = xt::zeros<double>({nbf, natgrid});
+    xt::xtensor<double, 2> tmp_z = xt::zeros<double>({nbf, natgrid});
+
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, natgrid, nbf, 1., Puv.data(), nbf, aos_vals_gradx.data(), natgrid, 0., tmp_x.data(), natgrid);
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, natgrid, nbf, 1., Puv.data(), nbf, aos_vals_grady.data(), natgrid, 0., tmp_y.data(), natgrid);
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, natgrid, nbf, 1., Puv.data(), nbf, aos_vals_gradz.data(), natgrid, 0., tmp_z.data(), natgrid);
+    
+    xt::xtensor<double, 1> rho_gradx = 2. * xt::sum(aos_vals * tmp_x, {0});
+    xt::xtensor<double, 1> rho_grady = 2. * xt::sum(aos_vals * tmp_y, {0});
+    xt::xtensor<double, 1> rho_gradz = 2. * xt::sum(aos_vals * tmp_z, {0});
+
+    return {rho_gradx, rho_grady, rho_gradz}; // ∂_x ρ = 2 ∑_μν φ_μ P_μν ∂_x φ_ν = 2 sum(φ_μ * (P_μν @ ∂_x φ_ν), axis=0) ∂
+}
+
+
+//>! slow but ensure correctness
+// std::array<xt::xtensor<double, 1>, 3> sf::DFT::DFT::compute_rho_grad(const xt::xtensor<double, 2>& Puv, 
+//                                                                      const xt::xtensor<double, 2>& aos_vals, 
+//                                                                      const xt::xtensor<double, 2>& aos_vals_gradx, 
+//                                                                      const xt::xtensor<double, 2>& aos_vals_grady, 
+//                                                                      const xt::xtensor<double, 2>& aos_vals_gradz)
+// {
+//     const size_t nbf = Puv.shape(0); // (nbf, nbf)
+//     const size_t natgrid = aos_vals.shape(1); // (nbf, natgrid)
+//     xt::xtensor<double, 1> res_x = xt::zeros<double>({natgrid}); // ∂x rho (natgrid,)
+//     xt::xtensor<double, 1> res_y = xt::zeros<double>({natgrid}); // ∂y rho (natgrid,)
+//     xt::xtensor<double, 1> res_z = xt::zeros<double>({natgrid}); // ∂z rho (natgrid,)
+
+//     // ∂_x ρ = ∑_μν ∂_x φ_μ P_μν φ_ν + φ_μ P_μν ∂_x φ_ν
+//     for (auto ibf=0; ibf < nbf; ++ibf) {
+//         for (auto jbf=0; jbf < nbf; ++jbf) {
+//             res_x += xt::row(aos_vals_gradx, ibf) * Puv(ibf, jbf) * xt::row(aos_vals, jbf) + \
+//                      xt::row(aos_vals, ibf) * Puv(ibf, jbf) * xt::row(aos_vals_gradx, jbf);
+//             res_y += xt::row(aos_vals_grady, ibf) * Puv(ibf, jbf) * xt::row(aos_vals, jbf) + \
+//                      xt::row(aos_vals, ibf) * Puv(ibf, jbf) * xt::row(aos_vals_grady, jbf);
+//             res_z += xt::row(aos_vals_gradz, ibf) * Puv(ibf, jbf) * xt::row(aos_vals, jbf) + \
+//                      xt::row(aos_vals, ibf) * Puv(ibf, jbf) * xt::row(aos_vals_gradz, jbf);
+//         }
+//     }
+
+//     return {res_x, res_y, res_z};
+// }
+
+
+xt::xtensor<double, 2> sf::DFT::DFT::xc_quadrature_lda(const xt::xtensor<double, 1>& mweighted_prop, const xt::xtensor<double, 2>& aos_vals)
+{
+    const size_t nbf = aos_vals.shape(0);
+    const size_t natgrid = aos_vals.shape(1);
+    xt::xtensor<double, 2> mweighted_prop_aos_vals = aos_vals * mweighted_prop;
+    xt::xtensor<double, 2> mat_local = xt::zeros<double>({nbf, nbf});
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, natgrid, 1., mweighted_prop_aos_vals.data(), natgrid, aos_vals.data(), natgrid, 0., mat_local.data(), nbf);
+    return mat_local;
+}
+
+
+xt::xtensor<double, 2> sf::DFT::DFT::xc_quadrature_gga(const xt::xtensor<double, 1>& mweighted_vsigma, 
+                                                       const xt::xtensor<double, 2>& aos_vals, 
+                                                       const xt::xtensor<double, 2>& aos_vals_gradx, 
+                                                       const xt::xtensor<double, 2>& aos_vals_grady, 
+                                                       const xt::xtensor<double, 2>& aos_vals_gradz, 
+                                                       const xt::xtensor<double, 1>& rho_gradx, 
+                                                       const xt::xtensor<double, 1>& rho_grady, 
+                                                       const xt::xtensor<double, 1>& rho_gradz)
+{
+    const size_t nbf = aos_vals.shape(0);
+    const size_t natgrid = aos_vals.shape(1);
+    xt::xtensor<double, 2> mweighted_vsigma_aos_vals = aos_vals * mweighted_vsigma;
+    xt::xtensor<double, 2> aos_vals_grad_dot_rho_grad = aos_vals_gradx * rho_gradx + aos_vals_grady * rho_grady + aos_vals_gradz * rho_gradz;
+    xt::xtensor<double, 2> mat_local = xt::zeros<double>({nbf, nbf});
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, natgrid, 1., mweighted_vsigma_aos_vals.data(), natgrid, aos_vals_grad_dot_rho_grad.data(), natgrid, 0., mat_local.data(), nbf);
+    return 2. * mat_local;
+}
+
+
+//>! slow but ensure correctness
+// xt::xtensor<double, 2> sf::DFT::DFT::xc_quadrature_gga(const xt::xtensor<double, 1>& mweighted_vsigma, 
+//                                                        const xt::xtensor<double, 2>& aos_vals, // (nbf, natgrid)
+//                                                        const xt::xtensor<double, 2>& aos_vals_gradx, // (nbf, natgrid)
+//                                                        const xt::xtensor<double, 2>& aos_vals_grady, 
+//                                                        const xt::xtensor<double, 2>& aos_vals_gradz, 
+//                                                        const xt::xtensor<double, 1>& rho_gradx, // (natgrid,)
+//                                                        const xt::xtensor<double, 1>& rho_grady,
+//                                                        const xt::xtensor<double, 1>& rho_gradz)
+// {
+//     const size_t nbf = aos_vals.shape(0);
+//     const size_t natgrid = aos_vals.shape(1);
+//     xt::xtensor<double, 2> mat_local = xt::zeros<double>({nbf, nbf});
+
+//     // ∇φ . ∇ρ (nbf, natgrid)
+//     xt::xtensor<double, 1> dot_x = xt::zeros<double>({natgrid});
+//     xt::xtensor<double, 1> dot_y = xt::zeros<double>({natgrid});
+//     xt::xtensor<double, 1> dot_z = xt::zeros<double>({natgrid});
+//     for (auto ibf=0; ibf < nbf; ++ibf) {
+//         for (auto jbf=0; jbf < nbf; ++jbf) {
+//             dot_x = xt::row(aos_vals, ibf) * xt::row(aos_vals_gradx, jbf) * rho_gradx + \
+//                     xt::row(aos_vals, jbf) * xt::row(aos_vals_gradx, ibf) * rho_gradx;
+//             dot_y = xt::row(aos_vals, ibf) * xt::row(aos_vals_grady, jbf) * rho_grady + \
+//                     xt::row(aos_vals, jbf) * xt::row(aos_vals_grady, ibf) * rho_grady;
+//             dot_z = xt::row(aos_vals, ibf) * xt::row(aos_vals_gradz, jbf) * rho_gradz + \
+//                     xt::row(aos_vals, jbf) * xt::row(aos_vals_gradz, ibf) * rho_gradz;
+//             mat_local(ibf, jbf) = xt::sum((dot_x + dot_y + dot_z) * mweighted_vsigma)();
+//         }
+//     }
+
+//     return mat_local;
+// }
+
+
+double sf::DFT::DFT::energy_decomposition(const xt::xtensor<double, 2>& Puv, const xt::xtensor<double, 2>& op)
+{
+    const size_t nbf = Puv.shape(0);
+    xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
+    // Puv @ Op.T
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, nbf, 1., Puv.data(), nbf, op.data(), nbf, 0., tmp.data(), nbf);
+    return ltr(tmp.data(), nbf);
+}
 
 
 void sf::DFT::DFT::cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xtensor<double, 2>>& focks, const std::vector<xt::xtensor<double, 2>>& diis_res)
 {
-    std::cout << "cDIIS enabled\n";
+    // std::cout << "cDIIS enabled\n";
     assert(fock.shape(0) == fock.shape(1));
     const size_t n = focks.size() + 1;
     const size_t nbf = fock.shape(0);
@@ -111,11 +246,8 @@ void sf::DFT::DFT::cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xte
     for (auto ii=0; ii < n-1; ++ii) {
         for (auto jj=ii; jj < n-1; ++jj) {
             xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
-            cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                        CblasTrans, nbf, nbf, 
-                        nbf, 1., diis_res[ii].data(), 
-                        nbf, diis_res[jj].data(), nbf, 
-                        0., tmp.data(), nbf); // diis_res[ii] @ diis_res[jj].T = tmp
+            // diis_res[ii] @ diis_res[jj].T = tmp
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, nbf, 1., diis_res[ii].data(), nbf, diis_res[jj].data(), nbf, 0., tmp.data(), nbf);
             if (jj == ii) {B(ii, jj) = ltr(tmp.data(), nbf); continue;}
             B(ii, jj) = ltr(tmp.data(), nbf);
             B(jj, ii) = B(ii, jj);
@@ -126,9 +258,8 @@ void sf::DFT::DFT::cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xte
     diis_rhs[n-1] = -1.;
 
     std::vector<int> ipiv(n, 0);
-    int info = LAPACKE_dsysv(LAPACK_ROW_MAJOR, 'U', n, 
-                            1, B.data(), n, 
-                            ipiv.data(), diis_rhs.data(), 1); // B x diis_coef = diis_rhs ; B destroyed, diis_rhs becomes diis_coef
+    // B x diis_coef = diis_rhs ; B destroyed, diis_rhs becomes diis_coef
+    int info = LAPACKE_dsysv(LAPACK_ROW_MAJOR, 'U', n, 1, B.data(), n, ipiv.data(), diis_rhs.data(), 1);
     assert(info == 0);
     fock *= 0.; // set to 0
     for (auto iii=0; iii < n-1; ++iii) fock += focks[iii] * diis_rhs[iii];
@@ -136,18 +267,36 @@ void sf::DFT::DFT::cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xte
 }
 
 
-void sf::DFT::DFT::scf(const int maxiter, 
-                       const double e_convergence, 
-                       const double d_convergence, 
-                       const int nbuffer, 
-                       const std::string& initial_guess, 
-                       const int X_id, 
-                       const int C_id, 
-                       const bool pure)
+void sf::DFT::DFT::scf(int maxiter, double e_convergence, double d_convergence, 
+                       int nbuffer, std::string initial_guess, 
+                       int X_id, int C_id, bool pure, 
+                       int radial_points, int angular_level, 
+                       int k, bool biased, std::string radial_scheme)
 {
-    const std::vector<libint2::Atom>& atoms = this->mol.atoms;
-    const std::vector<xt::xtensor<double, 2>>& aos_vals = pure ? this->aos_vals_pure : this->aos_vals_cart;
+    int family_x, family_c, number_x, number_c;
+    int kind_x = xc_family_from_id(X_id, &family_x, &number_x);
+    int kind_c = xc_family_from_id(C_id, &family_c, &number_c);
+    assert(family_x == family_c); // 1 LDA, 2 GGA
+    
+#ifdef TIMEIT
+const auto t0_init{std::chrono::steady_clock::now()};
+#endif
+    this->_init(radial_points, angular_level, k, biased, "becke", family_x);
+#ifdef TIMEIT
+const auto t1_init{std::chrono::steady_clock::now()};
+std::cout << "init      " << std::chrono::duration<double>(t1_init - t0_init) << std::endl;
+#endif
+
+    // just less typing
     const size_t nbf = pure ? this->nbf_pure : this->nbf_cart;
+    const size_t natom = this->natom;
+    const size_t natgrid = this->natgrid;
+    const size_t ngrid = this->ngrid;
+    const std::vector<libint2::Atom>& atoms = this->mol.atoms;
+    const std::vector<xt::xtensor<double, 2>>& aos_vals       = pure ? this->aos_vals_pure : this->aos_vals_cart;
+    const std::vector<xt::xtensor<double, 2>>& aos_vals_gradx = pure ? this->aos_vals_gradx_pure : this->aos_vals_gradx_cart;
+    const std::vector<xt::xtensor<double, 2>>& aos_vals_grady = pure ? this->aos_vals_grady_pure : this->aos_vals_grady_cart;
+    const std::vector<xt::xtensor<double, 2>>& aos_vals_gradz = pure ? this->aos_vals_gradz_pure : this->aos_vals_gradz_cart;
 
     const xt::xtensor<double, 2> sij = pure ? sf::get_olp(this->mol.shells_pure)        : sf::get_olp(this->mol.shells_cart);
     const xt::xtensor<double, 2> tij = pure ? sf::get_kin(this->mol.shells_pure)        : sf::get_kin(this->mol.shells_cart);
@@ -155,19 +304,19 @@ void sf::DFT::DFT::scf(const int maxiter,
     const xt::xtensor<double, 2> hij = tij + vij;
     assert(sij.shape(0) == nbf && sij.shape(1) == nbf);
 
-    xt::xtensor<double, 2> mweights = xt::zeros<double>({this->natom, this->natgrid});
-    for (auto iatom=0; iatom < this->natom; ++iatom) {
+    xt::xtensor<double, 2> mweights = xt::zeros<double>({natom, natgrid});
+    for (auto iatom=0; iatom < natom; ++iatom) {
         // (nrad, ) 径向权重
         // (nang, ) 角度权重
         // outer (nrad, nang) 外积
         xt::xtensor<double, 1> wrad = xt::square(xt::row(this->becke.xrwcheb[iatom], 1)) * xt::row(this->becke.xrwcheb[iatom], 2);
         xt::xtensor<double, 1> wang = xt::row(this->becke.xwleb, 3);
         xt::xtensor<double, 2> outer = xt::zeros<double>({wrad.size(), wang.size()});
-        cblas_dger(CblasRowMajor, wrad.size(), wang.size(), 
-                    1., wrad.data(), 1, 
-                    wang.data(), 1, outer.data(), outer.shape(1)); // np.outer(wrad, wang)
+        // np.outer(wrad, wang)
+        cblas_dger(CblasRowMajor, wrad.size(), wang.size(), 1., wrad.data(), 1, wang.data(), 1, outer.data(), outer.shape(1));
         xt::row(mweights, iatom) = xt::ravel(outer) * this->becke.weights[iatom];
     }
+
     
 
     this->header_log();
@@ -175,19 +324,11 @@ void sf::DFT::DFT::scf(const int maxiter,
     
     // 参数设置
     int counter = 0;
-    this->etots.emplace_back(std::nan("1"));
+    double etot_old = std::nan("1");
     xt::xtensor<double, 2> Puv_old = xt::ones<double>({nbf, nbf}) * std::nan("1");
-    std::vector<xt::xtensor<double, 2>> focks;
-    std::vector<xt::xtensor<double, 2>> diis_res;
-    focks.reserve(maxiter+1);
-    diis_res.reserve(maxiter+1);
-    this->kinetic_energies.reserve(maxiter + 1);
-    this->external_energies.reserve(maxiter + 1);
-    this->hartree_energies.reserve(maxiter + 1);
-    this->exchange_energies.reserve(maxiter + 1);
-    this->correlation_energies.reserve(maxiter + 1);
-    this->etots.reserve(maxiter + 1);
-    this->ne_quads.reserve(maxiter + 1);
+    std::vector<xt::xtensor<double, 2>>    focks;    focks.reserve(maxiter+1);
+    std::vector<xt::xtensor<double, 2>> diis_res; diis_res.reserve(maxiter+1);
+
 
 
     // 重叠矩阵正交化
@@ -200,30 +341,20 @@ void sf::DFT::DFT::scf(const int maxiter,
         double sfmin = LAPACKE_dlamch('S'); // safe minium for DSYEVR
         int m;
         std::vector<int> isuppz(2*nbf, 0);
-        int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', 
-                                nbf, sij_mutable.data(), nbf, 0., 
-                                0., 1, nbf, 
-                                sfmin, &m, s.data(), u.data(), 
-                                nbf, isuppz.data()); // sij -> vecs: u ; vals: s
+        // sij -> vecs: u ; vals: s
+        int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', nbf, sij_mutable.data(), nbf, 0., 0., 1, nbf, sfmin, &m, s.data(), u.data(), nbf, isuppz.data());
         assert(info == 0);
     }
 
     xt::xtensor<double, 2> inv_s = xt::zeros<double>({nbf, nbf}); // diag(s^-1/2)
     for (auto i=0; i < nbf; ++i) inv_s(i,i) = std::sqrt(1. / s[i]);
-    xt::xtensor<double, 2> sij_inv_half = xt::zeros<double>({nbf, nbf}); // sij_inv_half = (u @ inv_s) @ u.T
+    xt::xtensor<double, 2> sij_inv_half = xt::zeros<double>({nbf, nbf}); 
+    
+    // sij_inv_half = (u @ inv_s) @ u.T
     {
         xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf}); // tmp is local
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., u.data(), 
-                    nbf, inv_s.data(), nbf, 
-                    0., tmp.data(), nbf);
-        
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasTrans, nbf, nbf, 
-                    nbf, 1., tmp.data(), 
-                    nbf, u.data(), nbf, 
-                    0., sij_inv_half.data(), nbf);
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., u.data(), nbf, inv_s.data(), nbf, 0., tmp.data(), nbf);
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, nbf, 1., tmp.data(), nbf, u.data(), nbf, 0., sij_inv_half.data(), nbf);
     }
 
  
@@ -236,50 +367,35 @@ void sf::DFT::DFT::scf(const int maxiter,
     xt::xtensor<double, 2> vecs = xt::zeros<double>({nbf, nbf});   // will be reused
     if (initial_guess == "core") {
         xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., sij_inv_half.data(), 
-                    nbf, hij.data(), nbf, 
-                    0., tmp.data(), nbf); // sij_inv_half @ hij = tmp
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., tmp.data(), 
-                    nbf, sij_inv_half.data(), nbf, 
-                    0., fprime.data(), nbf); // fprime = (sij_inv_half @ hij) @ sij_inv_half
+        // sij_inv_half @ hij = tmp
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij_inv_half.data(), nbf, hij.data(), nbf, 0., tmp.data(), nbf);
+        // fprime = (sij_inv_half @ hij) @ sij_inv_half
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., tmp.data(), nbf, sij_inv_half.data(), nbf, 0., fprime.data(), nbf);
 
         xt::xtensor<double, 2> fprime_mutable{fprime}; // let fprime_mutable be destroyed
         double sfmin = LAPACKE_dlamch('S'); // safe minium for DSYEVR
         int m;
         std::vector<int> isuppz(2*nbf, 0);
-        int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', 
-                                nbf, fprime_mutable.data(), nbf, 0., 
-                                0., 1, nbf, 
-                                sfmin, &m, e.data(), cprime.data(), 
-                                nbf, isuppz.data()); // fprime -> vecs: cprime  vals: e
+        // fprime -> vecs: cprime  vals: e
+        int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', nbf, fprime_mutable.data(), nbf, 0., 0., 1, nbf, sfmin, &m, e.data(), cprime.data(), nbf, isuppz.data());
         assert(info == 0);
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., sij_inv_half.data(), 
-                    nbf, cprime.data(), nbf, 
-                    0., vecs.data(), nbf); // vecs = sij_inv_half @ cprime
+        // vecs = sij_inv_half @ cprime
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij_inv_half.data(), nbf, cprime.data(), nbf, 0., vecs.data(), nbf);
     }
     else if(initial_guess == "SAD") {std::cerr << "SAD not implemented yet\n"; exit(-1);}
     else {std::cerr << "Unknown initial guess\n"; exit(-1);}
 
+
+
     xt::xtensor<double, 2> Puv = xt::zeros<double>({nbf, nbf}); // Puv = vecs[:,:nocc] @ vecs[:,:nocc].T
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                this->nocc, 2., vecs.data(), 
-                nbf, vecs.data(), nbf, 
-                0., Puv.data(), nbf);
-    
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, this->nocc, 2., vecs.data(), nbf, vecs.data(), nbf, 0., Puv.data(), nbf);
 
 
     // 初始化 libxc
     xc_func_type funcx, funcc;
     xc_func_init(&funcx, X_id, XC_UNPOLARIZED); // exchange
     xc_func_init(&funcc, C_id, XC_UNPOLARIZED); // correlation
-
+    
 
     ///////////////////
     //>! SCF START !<//
@@ -289,129 +405,148 @@ void sf::DFT::DFT::scf(const int maxiter,
     std::cout << std::string(65, '=') << std::endl;
     std::cout << "bf type " << (pure ? "pure" : "cartesian") << std::endl;
     std::cout << "Fock shape " << "(" << hij.shape(0) << ", " << hij.shape(1) << ")" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Step |    1e energy    |    2e energy    |    xc energy    |    total    |    ne    |    ΔE    |    ΔD\n";
+
+
+#ifdef TIMEIT
+    auto t0_eden_grad{std::chrono::steady_clock::now()};
+    auto t1_eden_grad{std::chrono::steady_clock::now()};
+    auto t0_xc{std::chrono::steady_clock::now()};
+    auto t1_xc{std::chrono::steady_clock::now()};
+#endif
+
 
     while (true) {
-    std::cout << "\n!>STEP " << counter+1 << std::endl;
-    xt::xtensor<double, 2> rho = xt::zeros<double>({this->natom, this->natgrid});
-
-#ifdef TIMEIT
-    const auto t0{std::chrono::steady_clock::now()};
-#endif
-
-#pragma omp parallel for
-    for (auto iatom=0; iatom < this->natom; ++iatom) {
-        for (auto ibf=0; ibf < nbf; ++ibf) {
-            for (auto jbf=ibf; jbf < nbf; ++jbf) {
-                auto phi_mu = xt::row(aos_vals[iatom], ibf);
-                auto phi_nu = xt::row(aos_vals[iatom], jbf);
-                if (jbf > ibf) xt::row(rho, iatom) += 2. * phi_mu * Puv(ibf, jbf) * phi_nu;
-                else           xt::row(rho, iatom) +=      phi_mu * Puv(ibf, jbf) * phi_nu;
-            }
-        }
-    }
-
-#ifdef TIMEIT
-    const auto t1{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_rho{t1 - t0};
-#endif
+    // std::cout << "\n!>STEP " << counter+1 << std::endl;
+    xt::xtensor<double, 2> rho = xt::zeros<double>({natom, natgrid});
 
 
-    double ne_quad = xt::sum(rho * mweights)(); // 检查通过求积得到的电子数是否复现真值
-    std::cout << std::format("Number of electron via quadrature = {:<.15f}\n", ne_quad);
+    // updata electron density, which is needed anyway
+    for (auto iatom=0; iatom < natom; ++iatom) xt::row(rho, iatom) = this->compute_rho(Puv, aos_vals[iatom]);
+
+    // 检查通过求积得到的电子数是否复现真值
+    double ne_quad = xt::sum(rho * mweights)();
     rho *= this->ne / ne_quad;
 
 #ifdef TIMEIT
-    const auto t0_Juv{std::chrono::steady_clock::now()};
+const auto t0_eri{std::chrono::steady_clock::now()};
 #endif
-    xt::xtensor<double, 2> Juv  = pure ? sf::get_J(this->mol.shells_pure, Puv) : sf::get_J(this->mol.shells_cart, Puv);
+    xt::xtensor<double, 2> Juv = pure ? sf::get_J_par(this->mol.shells_pure, Puv) : sf::get_J_par(this->mol.shells_cart, Puv);    
 #ifdef TIMEIT
-    const auto t1_Juv{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_Juv{t1_Juv - t0_Juv};
+const auto t1_eri{std::chrono::steady_clock::now()};
 #endif
-
     xt::xtensor<double, 2> Kuv  = xt::zeros<double>({nbf, nbf});
     xt::xtensor<double, 2> Cuv  = xt::zeros<double>({nbf, nbf});
     xt::xtensor<double, 2> Exuv = xt::zeros<double>({nbf, nbf});
     xt::xtensor<double, 2> Ecuv = xt::zeros<double>({nbf, nbf});
-    xt::xtensor<double, 2> vx   = xt::zeros<double>({this->natom, this->natgrid});
-    xt::xtensor<double, 2> ex   = xt::zeros<double>({this->natom, this->natgrid});
-    xt::xtensor<double, 2> vc   = xt::zeros<double>({this->natom, this->natgrid});
-    xt::xtensor<double, 2> ec   = xt::zeros<double>({this->natom, this->natgrid});
+    
+    // xc-kernel
+    xt::xtensor<double, 2> vx = xt::zeros<double>({natom, natgrid}); // exchange vrho
+    xt::xtensor<double, 2> ex = xt::zeros<double>({natom, natgrid}); // exchange zk    
+    xt::xtensor<double, 2> vc = xt::zeros<double>({natom, natgrid}); // correlation
+    xt::xtensor<double, 2> ec = xt::zeros<double>({natom, natgrid}); // correlation
+    
+    
+    if (family_x == 2) { // GGA
+        std::vector<xt::xtensor<double, 1>> rho_gradx{natom, xt::zeros<double>({natgrid})}; // libxc needs sigma, not grad_xyz
+        std::vector<xt::xtensor<double, 1>> rho_grady{natom, xt::zeros<double>({natgrid})}; // so sigma should be continuous in mem
+        std::vector<xt::xtensor<double, 1>> rho_gradz{natom, xt::zeros<double>({natgrid})}; // while grad_xyz don't have to
+        xt::xtensor<double, 2> sigma   = xt::zeros<double>({natom, natgrid});
+        xt::xtensor<double, 2> vsigmax = xt::zeros<double>({natom, natgrid});
+        xt::xtensor<double, 2> vsigmac = xt::zeros<double>({natom, natgrid});
+        
+        // loop over atoms to compute ∇ρ and σ=|∇ρ|^2
+#ifdef TIMEIT
+t0_eden_grad = std::chrono::steady_clock::now();
+#endif
+#pragma omp for
+        for (auto iatom=0; iatom < natom; ++iatom) {
+            auto rho_grads = this->compute_rho_grad(Puv, aos_vals[iatom], aos_vals_gradx[iatom], aos_vals_grady[iatom], aos_vals_gradz[iatom]);
+            rho_gradx[iatom] = rho_grads[0]; // 避免深拷贝?
+            rho_grady[iatom] = rho_grads[1];
+            rho_gradz[iatom] = rho_grads[2];
+            xt::row(sigma, iatom) = xt::square(rho_grads[0]) + xt::square(rho_grads[1]) + xt::square(rho_grads[2]);
+        }
+#ifdef TIMEIT
+t1_eden_grad = std::chrono::steady_clock::now();
+#endif
+        
+        xc_gga_vxc(&funcx, ngrid, rho.data(), sigma.data(), vx.data(), vsigmax.data());
+        xc_gga_exc(&funcx, ngrid, rho.data(), sigma.data(), ex.data());
+        xc_gga_vxc(&funcc, ngrid, rho.data(), sigma.data(), vc.data(), vsigmac.data());
+        xc_gga_exc(&funcc, ngrid, rho.data(), sigma.data(), ec.data());
+        
 
 #ifdef TIMEIT
-    const auto t2{std::chrono::steady_clock::now()};
+t0_xc = std::chrono::steady_clock::now();
 #endif
-    xc_lda_vxc(&funcx, this->ngrid, rho.data(), vx.data()); // this is why vx cannot be vector<xtensor<double, 1>>
-    xc_lda_exc(&funcx, this->ngrid, rho.data(), ex.data());
-    xc_lda_vxc(&funcc, this->ngrid, rho.data(), vc.data());
-    xc_lda_exc(&funcc, this->ngrid, rho.data(), ec.data());
-#ifdef TIMEIT
-    const auto t3{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_libxc{t3 - t2};
-#endif
-
-
-// rho (natom, natgrid)
-// aos_vals2 [natom, (nbf, natgrid)]
-// mweights (natom, natgrid)
-#ifdef TIMEIT
-    const auto t4{std::chrono::steady_clock::now()};
-#endif
-
-
-// BLAS level 3 for fock is 10x faster
 #pragma omp parallel for
-    for (auto iatom=0; iatom < this->natom; ++iatom) {
-        xt::xtensor<double, 1> vx_mweights = xt::row(mweights, iatom) * xt::row(vx, iatom);
-        xt::xtensor<double, 1> vc_mweights = xt::row(mweights, iatom) * xt::row(vc, iatom);
-        xt::xtensor<double, 1> ex_mweights = xt::row(mweights, iatom) * xt::row(ex, iatom);
-        xt::xtensor<double, 1> ec_mweights = xt::row(mweights, iatom) * xt::row(ec, iatom);
-        xt::xtensor<double, 2> vx_weighted_aos_vals = aos_vals[iatom] * vx_mweights;
-        xt::xtensor<double, 2> vc_weighted_aos_vals = aos_vals[iatom] * vc_mweights;
-        xt::xtensor<double, 2> ex_weighted_aos_vals = aos_vals[iatom] * ex_mweights;
-        xt::xtensor<double, 2> ec_weighted_aos_vals = aos_vals[iatom] * ec_mweights;
-        xt::xtensor<double, 2> Kuv_local  = xt::zeros<double>({nbf, nbf});
-        xt::xtensor<double, 2> Cuv_local  = xt::zeros<double>({nbf, nbf});
-        xt::xtensor<double, 2> Exuv_local = xt::zeros<double>({nbf, nbf});
-        xt::xtensor<double, 2> Ecuv_local = xt::zeros<double>({nbf, nbf});
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasTrans, nbf, nbf, 
-                    this->natgrid, 1., vx_weighted_aos_vals.data(), 
-                    this->natgrid, aos_vals[iatom].data(), this->natgrid, 
-                    0., Kuv_local.data(), nbf); // (vx x mweights x aos_vals) @ aos_vals.T => Kuv
-
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasTrans, nbf, nbf, 
-                    this->natgrid, 1., vc_weighted_aos_vals.data(), 
-                    this->natgrid, aos_vals[iatom].data(), this->natgrid, 
-                    0., Cuv_local.data(), nbf); // (vc x mweights x aos_vals) @ aos_vals.T => Cuv
-
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasTrans, nbf, nbf, 
-                    this->natgrid, 1., ex_weighted_aos_vals.data(), 
-                    this->natgrid, aos_vals[iatom].data(), this->natgrid, 
-                    0., Exuv_local.data(), nbf); // (ex x mweights x aos_vals) @ aos_vals.T => Exuv
-
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasTrans, nbf, nbf, 
-                    this->natgrid, 1., ec_weighted_aos_vals.data(), 
-                    this->natgrid, aos_vals[iatom].data(), this->natgrid, 
-                    0., Ecuv_local.data(), nbf); // (ec x mweights x aos_vals) @ aos_vals.T => Ecuv
+        for (auto iatom=0; iatom < natom; ++iatom) {
+            xt::xtensor<double, 1> vx_mweights      = xt::row(mweights, iatom) * xt::row(vx,      iatom);
+            xt::xtensor<double, 1> vc_mweights      = xt::row(mweights, iatom) * xt::row(vc,      iatom);
+            xt::xtensor<double, 1> ex_mweights      = xt::row(mweights, iatom) * xt::row(ex,      iatom);
+            xt::xtensor<double, 1> ec_mweights      = xt::row(mweights, iatom) * xt::row(ec,      iatom);
+            xt::xtensor<double, 1> vsigmax_mweights = xt::row(mweights, iatom) * xt::row(vsigmax, iatom);
+            xt::xtensor<double, 1> vsigmac_mweights = xt::row(mweights, iatom) * xt::row(vsigmac, iatom);
+            
+            xt::xtensor<double, 2> Kuv_local = this->xc_quadrature_lda(vx_mweights, aos_vals[iatom]);
+            Kuv_local += 2. * this->xc_quadrature_gga(vsigmax_mweights, aos_vals[iatom], 
+                                                      aos_vals_gradx[iatom], aos_vals_grady[iatom], aos_vals_gradz[iatom], 
+                                                      rho_gradx[iatom], rho_grady[iatom], rho_gradz[iatom]);
+            
+            xt::xtensor<double, 2> Cuv_local = this->xc_quadrature_lda(vc_mweights, aos_vals[iatom]);
+            Cuv_local += 2. * this->xc_quadrature_gga(vsigmac_mweights, aos_vals[iatom], 
+                                                      aos_vals_gradx[iatom], aos_vals_grady[iatom], aos_vals_gradz[iatom], 
+                                                      rho_gradx[iatom], rho_grady[iatom], rho_gradz[iatom]);
+            
+            xt::xtensor<double, 2> Exuv_local = this->xc_quadrature_lda(ex_mweights, aos_vals[iatom]);
+            xt::xtensor<double, 2> Ecuv_local = this->xc_quadrature_lda(ec_mweights, aos_vals[iatom]);
 #pragma omp critical
-{
-    Kuv  += Kuv_local;
-    Cuv  += Cuv_local;
-    Exuv += Exuv_local;
-    Ecuv += Ecuv_local;
-}
-    }
-
-
+            {
+            Kuv += Kuv_local;
+            Cuv += Cuv_local;
+            Exuv += Exuv_local;
+            Ecuv += Ecuv_local;
+            }
+        }
 #ifdef TIMEIT
-    const auto t5{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_fock{t5 - t4};
+t1_xc = std::chrono::steady_clock::now();
 #endif
-
+    }
+    else if (family_x == 1) { // LDA
+        xc_lda_vxc(&funcx, ngrid, rho.data(), vx.data()); // this is why vx cannot be 
+        xc_lda_exc(&funcx, ngrid, rho.data(), ex.data()); // std::vector<xtensor<double, 1>>
+        xc_lda_vxc(&funcc, ngrid, rho.data(), vc.data());
+        xc_lda_exc(&funcc, ngrid, rho.data(), ec.data());
+        
+#ifdef TIMEIT
+t0_xc = std::chrono::steady_clock::now();
+#endif
+#pragma omp for
+        for (auto iatom=0; iatom < natom; ++iatom) {
+            xt::xtensor<double, 1> vx_mweights = xt::row(mweights, iatom) * xt::row(vx, iatom);
+            xt::xtensor<double, 1> vc_mweights = xt::row(mweights, iatom) * xt::row(vc, iatom);
+            xt::xtensor<double, 1> ex_mweights = xt::row(mweights, iatom) * xt::row(ex, iatom);
+            xt::xtensor<double, 1> ec_mweights = xt::row(mweights, iatom) * xt::row(ec, iatom);
+            
+            xt::xtensor<double, 2> Kuv_local  = this->xc_quadrature_lda(vx_mweights, aos_vals[iatom]);
+            xt::xtensor<double, 2> Cuv_local  = this->xc_quadrature_lda(vc_mweights, aos_vals[iatom]);
+            xt::xtensor<double, 2> Exuv_local = this->xc_quadrature_lda(ex_mweights, aos_vals[iatom]);
+            xt::xtensor<double, 2> Ecuv_local = this->xc_quadrature_lda(ec_mweights, aos_vals[iatom]);
+#pragma omp critical
+            {
+            Kuv  += Kuv_local;
+            Cuv  += Cuv_local;
+            Exuv += Exuv_local;
+            Ecuv += Ecuv_local;
+            }
+        }
+#ifdef TIMEIT
+t1_xc = std::chrono::steady_clock::now();
+#endif
+    }
+    else {std::cerr << "Unknown or un-supported xc\n"; exit(-1);}
 
 
     xt::xtensor<double, 2> fock = tij + vij + Juv + Kuv + Cuv;
@@ -421,57 +556,17 @@ void sf::DFT::DFT::scf(const int maxiter,
 
     // 能量分解
     // rho (natom, natgrid)
-    // mweights (natom, natgrid)
-    ne_quad              = xt::sum(rho * mweights)();
-    xt::xtensor<double, 2> Puv_times_tijT  = xt::zeros<double>({nbf, nbf});
-    xt::xtensor<double, 2> Puv_times_vijT  = xt::zeros<double>({nbf, nbf});
-    xt::xtensor<double, 2> Puv_times_JuvT  = xt::zeros<double>({nbf, nbf});
-    xt::xtensor<double, 2> Puv_times_ExuvT = xt::zeros<double>({nbf, nbf});
-    xt::xtensor<double, 2> Puv_times_EcuvT = xt::zeros<double>({nbf, nbf});
+    // mweights (natom, natgrid)    
+    // ne_quad              = xt::sum(rho * mweights)();
+    double kin_e         = energy_decomposition(Puv, tij);
+    double ext_e         = energy_decomposition(Puv, vij);
+    double hartree_e     = energy_decomposition(Puv, Juv) * 0.5;
+    double exchange_e    = energy_decomposition(Puv, Exuv);
+    double correlation_e = energy_decomposition(Puv, Ecuv);
+    double etot          = kin_e + ext_e + hartree_e + exchange_e + correlation_e + this->mol.e_nuc;
 
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, tij.data(),  nbf, 
-                0., Puv_times_tijT.data(),  nbf); // Puv @ tij.T
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, vij.data(),  nbf, 
-                0., Puv_times_vijT.data(),  nbf); // Puv @ vij,T
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, Juv.data(),  nbf, 
-                0., Puv_times_JuvT.data(),  nbf); // Puv @ Juv.T
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, Exuv.data(), nbf, 
-                0., Puv_times_ExuvT.data(), nbf); // Puv @ Exuv.T
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, Ecuv.data(), nbf, 
-                0., Puv_times_EcuvT.data(), nbf); // Puv @ Ecuv.T
-    
-
-    double kin_e         = ltr(Puv_times_tijT.data(),  nbf);
-    double ext_e         = ltr(Puv_times_vijT.data(),  nbf);
-    double hartree_e     = ltr(Puv_times_JuvT.data(),  nbf) * 0.5;
-    double exchange_e    = ltr(Puv_times_ExuvT.data(), nbf);
-    double correlation_e = ltr(Puv_times_EcuvT.data(), nbf);
-    double etot = kin_e + ext_e + hartree_e + exchange_e + correlation_e + this->mol.e_nuc;
-
-    this->ne_quads.emplace_back(ne_quad);
-    this->kinetic_energies.emplace_back(kin_e);
-    this->external_energies.emplace_back(ext_e);
-    this->hartree_energies.emplace_back(hartree_e);
-    this->exchange_energies.emplace_back(exchange_e);
-    this->correlation_energies.emplace_back(correlation_e);
-    this->etots.emplace_back(etot);
-    this->energy_log();
-
+    std::cout << std::format("{:<4d}   {:>.12f}   {:>.12f}   {:>.12f}   {:>.12f}   {:>.12f}  ", 
+    counter+1, kin_e+ext_e, hartree_e, exchange_e+correlation_e, etot, ne_quad);
 
 
     // 收敛加速
@@ -484,67 +579,39 @@ void sf::DFT::DFT::scf(const int maxiter,
     xt::xtensor<double, 2> tmp     = xt::zeros<double>({nbf, nbf});
     xt::xtensor<double, 2> residue = xt::zeros<double>({nbf, nbf});
 
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., fock.data(), 
-                nbf, Puv.data(), nbf, 
-                0., tmp_lhs.data(), nbf); // fock @ Puv = tmp_lhs
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., tmp_lhs.data(), 
-                nbf, sij.data(), nbf, 
-                0., lhs.data(), nbf); // tmp_lhs @ sij = lhs
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., Puv.data(), 
-                nbf, fock.data(), nbf, 
-                0., tmp_rhs.data(), nbf); // Puv @ fock = tmp_rhs
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., sij.data(), 
-                nbf, tmp_rhs.data(), nbf, 
-                0., rhs.data(), nbf); // tmp_rhs @ sij = rhs
+    // fock @ Puv = tmp_lhs
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., fock.data(), nbf, Puv.data(), nbf, 0., tmp_lhs.data(), nbf);
+    
+    // tmp_lhs @ sij = lhs
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., tmp_lhs.data(), nbf, sij.data(), nbf, 0., lhs.data(), nbf);
+
+    // Puv @ fock = tmp_rhs
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., Puv.data(), nbf, fock.data(), nbf, 0., tmp_rhs.data(), nbf);
+
+    // tmp_rhs @ sij = rhs
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij.data(), nbf, tmp_rhs.data(), nbf, 0., rhs.data(), nbf);
+    
     middle = lhs - rhs;
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., sij_inv_half.data(), 
-                nbf, middle.data(), nbf, 
-                0., tmp.data(), nbf); // sij_inv_half @ middle = tmp
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasNoTrans, nbf, nbf, 
-                nbf, 1., tmp.data(), 
-                nbf, sij_inv_half.data(), nbf, 
-                0., residue.data(), nbf); // tmp @ sij_inv_half = residue
+
+    // sij_inv_half @ middle = tmp
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij_inv_half.data(), nbf, middle.data(), nbf, 0., tmp.data(), nbf); 
+
+    // tmp @ sij_inv_half = residue
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., tmp.data(), nbf, sij_inv_half.data(), nbf, 0., residue.data(), nbf); 
     
     diis_res.emplace_back(residue);
 
-#ifdef TIMEIT
-    const auto t6{std::chrono::steady_clock::now()};
-#endif
-    
-    if (counter >= 2) cDIIS(fock, focks, diis_res);
+    if (counter >= 2) this->cDIIS(fock, focks, diis_res); // static can be called by non-static, but not other way around
 
-#ifdef TIMEIT
-    const auto t7{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_diis{t7 - t6};
-#endif
-    
-#ifdef TIMEIT
-    const auto t8{std::chrono::steady_clock::now()};
-#endif
+
     // 对角化 Fock matrix
     {
         xt::xtensor<double, 2> tmp = xt::zeros<double>({nbf, nbf});
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., sij_inv_half.data(), 
-                    nbf, fock.data(), nbf, 
-                    0., tmp.data(), nbf); // sij_inv_half @ fock = tmp
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., tmp.data(), 
-                    nbf, sij_inv_half.data(), nbf, 
-                    0., fprime.data(), nbf); // (sij_inv_half @ fock) @ sij_inv_half = fprime
+        // sij_inv_half @ fock = tmp
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij_inv_half.data(), nbf, fock.data(), nbf, 0., tmp.data(), nbf);
+        
+        // (sij_inv_half @ fock) @ sij_inv_half = fprime
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., tmp.data(), nbf, sij_inv_half.data(), nbf, 0., fprime.data(), nbf);
 
         xt::xtensor<double, 2> fprime_mutable{fprime}; // let fprime_mutable be destroyed
         double sfmin = LAPACKE_dlamch('S'); // safe minium for DSYEVR
@@ -556,31 +623,21 @@ void sf::DFT::DFT::scf(const int maxiter,
                                 sfmin, &m, e.data(), cprime.data(), 
                                 nbf, isuppz.data()); // fprime -> vecs: cprime  vals: e
         assert(info == 0);
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                    CblasNoTrans, nbf, nbf, 
-                    nbf, 1., sij_inv_half.data(), 
-                    nbf, cprime.data(), nbf, 
-                    0., vecs.data(), nbf); // vecs = sij_inv_half @ cprime
+        // vecs = sij_inv_half @ cprime
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, nbf, nbf, nbf, 1., sij_inv_half.data(), nbf, cprime.data(), nbf, 0., vecs.data(), nbf);
     }
 
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, 
-                CblasTrans, nbf, nbf, 
-                this->nocc, 2., vecs.data(), 
-                nbf, vecs.data(), nbf, 
-                0., Puv.data(), nbf); // Puv = 2 x vecs[:,:nocc] @ vecs[:,:nocc].T
+    // Puv = 2 x vecs[:,:nocc] @ vecs[:,:nocc].T
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, nbf, nbf, this->nocc, 2., vecs.data(), nbf, vecs.data(), nbf, 0., Puv.data(), nbf);
 
-#ifdef TIMEIT
-    const auto t9{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_diag{t9 - t8};
-#endif
 
 
     // 收敛判断
-    double e_diff = std::abs(this->etots.back() - this->etots[this->etots.size()-2]);
+    double e_diff = etot - etot_old;
     double d_diff = xt::sum(xt::square(Puv - Puv_old))();
+    std::cout << std::format(" {:>.12f}   {:>.12f} \n", e_diff, d_diff);
     if (e_diff < e_convergence && d_diff < d_convergence) {
-        std::cout << std::format("Density difference = {:<.12f}\n", d_diff);
-        std::cout << std::format("SCF converged after {:d} step. Total energy = {:<.15f}\n", counter+1, this->etots.back());
+        std::cout << std::format("\n!SCF converged after {} step. Total energy = {:<.15f} a.u.\n", counter+1, etot);
         
         int iorb = 1;
         std::cout << "\nDoubly occupied:\n";
@@ -597,34 +654,28 @@ void sf::DFT::DFT::scf(const int maxiter,
             if (iorb % 4 == 0) std::cout << std::endl;
             iorb += 1;
         }
-        std::cout << "\n!> NORMAL TERMINATION" << std::endl;
+        std::cout << "\n>! JOB DONE" << std::endl;
     
         break;
     }
 
     if (counter >= maxiter) {
-        std::cout << "SCF did not converge in " << maxiter << " step. Energy in the last iteration " << this->etots.back() << std::endl;
+        std::cout << "SCF did not converge in " << maxiter << " step. Energy in the last iteration " << etot << std::endl;
         break;
     }
 
-    std::cout << std::format("Density difference = {:.12f}\n", d_diff);
 
     counter++;
     Puv_old = Puv;
+    etot_old = etot;
+
 
 #ifdef TIMEIT
-    const auto t_while_end{std::chrono::steady_clock::now()};
-    const std::chrono::duration<double> wtime_while{t_while_end - t0};
-    std::cout << "wtime Juv   : " << wtime_Juv   << std::endl;
-    std::cout << "wtime rho   : " << wtime_rho   << std::endl;
-    std::cout << "wtime libxc : " << wtime_libxc << std::endl;
-    std::cout << "wtime fock  : " << wtime_fock  << std::endl;
-    // std::cout << "wtime diis  : " << wtime_diis << std::endl;
-    std::cout << "wtime diag  : " << wtime_fock  << std::endl;
-    std::cout << "wtime       : " << wtime_while << std::endl;
+std::cout << "eri       " << std::chrono::duration<double>(t1_eri - t0_eri) << std::endl;
+if (family_x == 2) std::cout << "eden grad " << std::chrono::duration<double>(t1_eden_grad - t0_eden_grad) << std::endl;
+std::cout << "xc        " << std::chrono::duration<double>(t1_xc - t0_xc) << std::endl;
 #endif
-
-    } // end scf while
+    } // end while
 
 
     xc_func_end(&funcx);
