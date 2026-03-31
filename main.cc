@@ -1,59 +1,36 @@
-#include <cstdlib>
 #include <iostream>
-#include <cstring>
+#include <format>
 #include <cassert>
+#include <cstring>
+#include <map>
+#include <array>
 
 #ifdef TIMEIT
 #include <chrono>
 #endif
 
 #include "include/dft.hpp"
-#include "include/hf.hpp"
 
 
-void test_hf()
+static const std::map<std::string, std::array<int, 2>> xc = {
+    {"pz", {1, 9}},
+    {"svwn5", {1, 8}}, 
+    {"pbe", {101, 130}}, 
+    {"blyp", {106, 131}},
+    {"pbesol", {116, 133}},
+    {"pw91", {109, 134}}
+};
+
+
+
+
+void test_dft(std::string xyzfile, std::string gbsfile, int X_id, int C_id)
 {
-    const char* datadir = std::getenv("DATADIR");
-    if (datadir == nullptr) {std::cerr << "DATADIR not defined\n"; exit(-1);}
-    const std::string LDATADIR{datadir};
-
-    std::cout << LDATADIR << std::endl;
-
     libint2::Shell::do_enforce_unit_normalization(false);
     libint2::initialize();
 
-    std::string xyzfile = std::string{LDATADIR} + "/xyz/ch3oh.xyz";
-    std::string name    = std::string{LDATADIR} + "/gbs/cc-pvdz.g94";
-    sf::HF::HF hf{xyzfile, name};
-
-    std::cout << "\n!!! Running HF in Spherical form !!!\n";
-    hf.scf(30, 1e-8, 1e-8, -1, "core", true);
-
-    libint2::finalize();
-}
-
-
-void test_dft(std::string& mol)
-{
-    const char* datadir = std::getenv("DATADIR");
-    if (datadir == nullptr) {std::cerr << "DATADIR not defined\n"; exit(-1);}
-    const std::string LDATADIR{datadir};
-
-    std::cout << LDATADIR << std::endl;
-
-    libint2::Shell::do_enforce_unit_normalization(false);
-    libint2::initialize();
-
-    // std::string xyzfile = std::string{LDATADIR} + "/xyz/ch4.xyz";
-    std::string xyzfile = mol;
-    std::string name    = std::string{LDATADIR} + "/gbs/cc-pvdz.g94";
-    sf::DFT::DFT dft{xyzfile, name};
-
-    dft.init();
-
-
-    std::cout << "\n!!! Running DFT in Spherical form !!!\n";
-    dft.scf(30, 1e-8, 1e-8, -1, "core", 1, 8, true);
+    sf::DFT::DFT dft{xyzfile, gbsfile};
+    dft.scf(30, 1e-8, 1e-8, -1, "core", X_id, C_id, true, 75, 29, 3, true, "becke");
 
     libint2::finalize();
 }
@@ -62,16 +39,27 @@ void test_dft(std::string& mol)
 
 int main(int argc, char** argv)
 {
-    assert(argc == 2);
-    std::string mol{argv[1]};
+    assert(argc == 5);
+    std::string xyzfile{argv[1]};
+    std::string gbsfile{argv[2]};
+    int X_id = std::stoi(argv[3]);
+    int C_id = std::stoi(argv[4]);
 
-    #ifdef TIMEIT
-    const auto t0{std::chrono::steady_clock::now()};
-    #endif
-    test_dft(mol);
-    // test_hf();
-    #ifdef TIMEIT
-    const auto t1{std::chrono::steady_clock::now()};
-    std::cout << "\nNormal termination or failed termination, you spent " << std::chrono::duration<double>{t1-t0} << " sec on it." << std::endl;
-    #endif
+    std::cout << xyzfile << std::endl;
+    std::cout << gbsfile << std::endl;
+
+#ifdef TIMEIT
+const auto t0{std::chrono::steady_clock::now()};
+#endif
+
+    test_dft(xyzfile, gbsfile, X_id, C_id);
+
+#ifdef TIMEIT
+const auto t1{std::chrono::steady_clock::now()};
+const auto wtime{std::chrono::duration<float>(t1-t0)};
+std::cout << "wtime " << wtime << std::endl;
+#endif
+
+
+    std::cout << "\nsafe here\n" << std::endl;
 }
