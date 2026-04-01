@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(segfault LANGUAGES CXX VERSION 0.0.3)
+project(segfault LANGUAGES CXX VERSION 0.0.2)
 
 set(VAR_TIMEIT "ON")
 set(VAR_RELEASE "ON")
