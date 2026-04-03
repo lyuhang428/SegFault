@@ -16,18 +16,7 @@
 #include "constants.hpp"
 #include "lblas.hpp"
 
-
-
 namespace sf::HF {
-
-/**
- * @brief 迭代子空间直接求逆
- * @param[inout] fock     {xxd} - 待更新 fock 矩阵
- * @param[in]    focks    {std::vector<xxd>} - 历史 fock 矩阵
- * @param[in]    diis_res {std::vector<xxd>} - 残差向量
-*/
-// void diis(xxd& fock, const std::vector<xxd>& focks, const std::vector<xxd>& diis_res);
-
 void cDIIS(xt::xtensor<double, 2>& fock, const std::vector<xt::xtensor<double, 2>>& focks, const std::vector<xt::xtensor<double, 2>>& diis_res);
 
 struct HF {
@@ -43,7 +32,6 @@ struct HF {
             const bool         pure=true);
 
 private:
-    // void energy_log() const;
 
     std::string                   xyzfile;
     std::string                      name;
