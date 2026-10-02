@@ -1,4 +1,5 @@
-**[English](README.md)**
+# **中文版本**
+**[English](#English-version)**
 
 # SegFault
 
@@ -32,7 +33,8 @@ see main.cc
 
 ---
 
-**[中文](README_zh.md)**
+# **English version**
+**[中文](#中文版本)**
 
 # SegFault
 
