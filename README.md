@@ -98,6 +98,7 @@ libint2::finalize(); // close libint
 ## Validation/Benchmark
 Validation against Psi4 (version 1.9.1)
 Machine: ThinkPad T14p, 13th Gen Intel(R) Core(TM) i5-13500H, 16 threads.
+cc-pvdz basis set.
 - **PBE**
 
 | System | $\quad\Delta E_\text{tot}\quad$ | $\quad\Delta E_\text{1e}\quad$ | $\quad\Delta E_\text{2e}\quad$ | $\quad\Delta E_\text{xc}\quad$ | $\Delta E_\text{HOMO-LUMO gap}$ | Wall time (sec) | 
@@ -332,6 +333,7 @@ libint2::finalize(); // close libint
 ## 结果验证
 计算结果与 Psi4 (version 1.9.1) 进行比较。
 硬件：ThinkPad T14p, 13th Gen Intel(R) Core(TM) i5-13500H, 16 线程.
+基组：cc-pvdz
 - **PBE**
 
 | System | $\quad\Delta E_\text{tot}\quad$ | $\quad\Delta E_\text{1e}\quad$ | $\quad\Delta E_\text{2e}\quad$ | $\quad\Delta E_\text{xc}\quad$ | $\Delta E_\text{HOMO-LUMO gap}$ | Wall time (sec) | 
